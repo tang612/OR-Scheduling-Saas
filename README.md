@@ -13,6 +13,7 @@
 | 第一性原理 + 反幻觉审查（修正 3 处错误断言） | ✅ 完成 |
 | 算法核心代码（CP-SAT + 构造启发式 + ALNS） | ✅ 完成 |
 | 四层测试 L1~L4（含性能数据 + 自动约束验证） | ✅ 完成 |
+| 算法迭代优化（解质量评价体系 + 多指标引导 + 智能终止） | ✅ 完成 |
 | L5 massive 极限压力测试 | ⏳ 待补 |
 
 ---
@@ -51,6 +52,32 @@
 
 ---
 
+## 算法迭代优化（解质量评价体系 + 多指标引导 + 智能终止）
+
+针对 L3 及以上大规模启发式调度，构建「评估 → 迭代优化」闭环，使每次算法迭代进步**可量化、可对比、可追溯**。
+
+**三处核心改动**：
+1. **多指标引导目标**：ALNS 接受准则从单一 λ 加权和扩展为 `obj/scale + w_bal·(1−balance) + w_flex·(1−flex)`，将负载均衡与可调整弹性纳入搜索引导
+2. **相对改进率终止**：连续 N 轮改进 < δ 即停，替代固定时间限制
+3. **迭代追溯快照**：`version → change → commit → metrics → delta` 完整链路，基准锁定四固定（实例/参考值/权重/seed）
+
+**实验结果（medium，50 单 8 机，目标=最小化 ΣT）**：
+
+| 版本 | ΣT | 负载均衡 | 弹性 | 综合评分 | 耗时 |
+|---|---|---|---|---|---|
+| v0 baseline（构造） | 8149 | 0.889 | 0.128 | 0.348 | 0.001s |
+| v1 原 ALNS（纯目标） | 7348 | 0.897 | 0.113 | 0.349 | 20.0s |
+| **v2 优化 ALNS**（多指标引导+智能终止） | 7631 | **0.923** | **0.124** | **0.355** | **3.1s** |
+
+- 综合评分单调提升（0.348→0.349→0.355）
+- 多指标引导提升负载均衡（0.897→0.923）
+- 智能终止省时 84%（3.1s vs 20s）
+- trade-off 诚实声明：ΣT 略升（7348→7631）换取负载均衡/弹性提升
+
+详见 HTML 报告 `docs/算法迭代优化报告_medium.html`、方案 `docs/solution-quality-evaluation-design.md`。
+
+---
+
 ## 目录结构
 
 ```
@@ -59,11 +86,13 @@ OR-Scheduling-Saas/
 │   ├── scheduler/          # 算法核心包
 │   │   ├── model.py        # 数据模型 + 加载 + 体检 + 预检 + 评估
 │   │   ├── cp_sat.py       # CP-SAT 精确求解（circuit 表达序列相关切换）
-│   │   ├── heuristics.py   # 构造启发式（EDD/SPT/LPT）+ ALNS
+│   │   ├── heuristics.py   # 构造启发式（EDD/SPT/LPT）+ ALNS（多指标引导+智能终止）
+│   │   ├── evaluation.py   # 解质量评价体系（7 指标 + 综合评分 + 迭代追溯快照）
 │   │   ├── router.py       # 求解器路由（数据决定模型）
 │   │   └── visualize.py    # 分层可视化（负载图/热力图/延误散点/甘特图）
 │   ├── run_scheduler.py    # CLI 单层求解
-│   └── run_tests.py        # L1-L4 测试 + 约束验证
+│   ├── run_tests.py        # L1-L4 测试 + 约束验证
+│   └── run_iteration.py    # 算法迭代优化实验 + HTML 报告
 ├── tests/unit/             # 单元测试
 ├── docs/
 │   ├── personality/        # Personality 最终版
@@ -89,6 +118,9 @@ python scripts/run_tests.py --levels toy,boundary,medium,large
 
 # 运行单元测试
 python -m pytest tests/unit/ -v
+
+# 运行算法迭代优化实验（生成 HTML 报告）
+python scripts/run_iteration.py
 ```
 
 输入数据为 5 个 JSON（machines / orders / recipes / switch_matrix / metadata），格式见 `mip_course/data/{toy,boundary,medium,large,massive}`。
@@ -104,6 +136,8 @@ python -m pytest tests/unit/ -v
 | 反幻觉核对清单 | `docs/anti-hallucination-checklist.md` | 三步制 + 红线 + 六维校验 |
 | 三条流水线 Skill | `skills/{app-dev-flow,change-request,debug}/SKILL.md` | 开发/变更/调试流程 |
 | 四层测试报告 | `docs/test-reports/` | L1~L4 报告 + 汇总 |
+| 解质量评价体系方案 | `docs/solution-quality-evaluation-design.md` | 方案 V3（含 gap 检索 + 迭代追溯） |
+| 算法迭代优化报告 | `docs/算法迭代优化报告_medium.html` | 迭代优化可视化 + 指标变化 |
 
 ---
 

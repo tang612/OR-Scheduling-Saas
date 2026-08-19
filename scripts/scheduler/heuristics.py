@@ -60,10 +60,11 @@ def constructive(data: DataModel, lambda_: tuple = (0.0, 1.0, 0.0),
 # ---------------------------------------------------------------------------
 
 def _seq_metric(data: DataModel, seq: list, mm: int):
-    """单机序列 metric = (end_time, tardiness, completion)。null 切换返回 None。"""
+    """单机序列 metric = (end_time, tardiness, completion, load)。null 切换返回 None。"""
     t = 0.0
     tard = 0.0
     comp = 0.0
+    load = 0.0
     last = None
     for j in seq:
         if last is not None:
@@ -71,11 +72,13 @@ def _seq_metric(data: DataModel, seq: list, mm: int):
             if s is None:
                 return None
             t += s + data.machines[mm].cleanup_time
+            load += s + data.machines[mm].cleanup_time
         t += data.p[j]
+        load += data.p[j]
         tard += max(0, t - data.d[j])
         comp += t
         last = data.rho[j]
-    return (t, tard, comp)
+    return (t, tard, comp, load)
 
 
 def _global_obj(metrics, lambda_):
@@ -83,6 +86,21 @@ def _global_obj(metrics, lambda_):
     tard = sum(mt[1] for mt in metrics)
     comp = sum(mt[2] for mt in metrics)
     return lambda_[0] * mk + lambda_[1] * tard + lambda_[2] * comp
+
+
+def _guided_obj(metrics, lambda_, obj_scale, w_bal, w_flex):
+    """多指标引导目标：obj/scale + w_bal·(1-balance) + w_flex·(1-flex)。"""
+    obj = _global_obj(metrics, lambda_)
+    obj_norm = obj / max(obj_scale, 1.0)
+    mk = max((mt[0] for mt in metrics), default=0.0)
+    loads = [mt[3] for mt in metrics]
+    mu = sum(loads) / len(loads) if loads else 0.0
+    balance = 1.0
+    if mu > 0:
+        sigma = (sum((l - mu) ** 2 for l in loads) / len(loads)) ** 0.5
+        balance = max(0.0, 1.0 - sigma / mu)
+    flex = max(0.0, 1.0 - mu / mk) if mk > 0 else 0.0
+    return obj_norm + w_bal * (1.0 - balance) + w_flex * (1.0 - flex)
 
 
 def _order_end(data, sequences):
@@ -131,8 +149,15 @@ def _insert_best(data, sequences, metrics, j, lambda_):
 
 
 def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
-         seed: int = 42, verbose: bool = True) -> Schedule:
-    """自适应大邻域搜索 + 模拟退火（增量评估，副本式迭代）。"""
+         seed: int = 42, verbose: bool = True, w_bal: float = 0.0,
+         w_flex: float = 0.0, obj_scale: float | None = None,
+         imp_patience: int | None = None, imp_threshold: float = 1e-4,
+         return_history: bool = False):
+    """自适应大邻域搜索 + 模拟退火。
+
+    扩展（方案 V3）：多指标引导目标（w_bal/w_flex）+ 相对改进率终止
+    + 收敛曲线记录。return_history=True 时返回 (best, history)。
+    """
     rng = random.Random(seed)
     n, m = data.n, data.m
 
@@ -141,12 +166,16 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
     metrics = []
     for mm in range(m):
         nm = _seq_metric(data, sequences[mm], mm)
-        metrics.append(nm if nm is not None else (0.0, 0.0, 0.0))
+        metrics.append(nm if nm is not None else (0.0, 0.0, 0.0, 0.0))
 
-    f_cur = _global_obj(metrics, lambda_)
+    if obj_scale is None:
+        obj_scale = _global_obj(metrics, lambda_)
+
+    f_cur = _guided_obj(metrics, lambda_, obj_scale, w_bal, w_flex)
     f_best = f_cur
     best_sequences = [list(s) for s in sequences]
     best_assignment = list(assignment)
+    best_metrics = list(metrics)
 
     T = max(1.0, f_best * 0.02) if f_best > 0 else 1.0
     cooling = 0.9997
@@ -158,6 +187,9 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
     t0 = time.time()
     iteration = 0
     accepted = 0
+    history = []                       # 收敛曲线：(iter, best_λ目标, best_引导目标)
+    checkpoint_fbest = f_best          # 相对改进率检查点
+    checkpoint_iter = 0
 
     while time.time() - t0 < time_limit:
         iteration += 1
@@ -207,8 +239,8 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
         if not ok:
             continue
 
-        # 接受准则
-        f_new = _global_obj(new_metrics, lambda_)
+        # 接受准则（多指标引导目标）
+        f_new = _guided_obj(new_metrics, lambda_, obj_scale, w_bal, w_flex)
         improved = f_new < f_best
         if f_new <= f_cur or rng.random() < math.exp(-(f_new - f_cur) / T):
             sequences, assignment, metrics = new_seq, new_assign, new_metrics
@@ -218,6 +250,7 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
                 f_best = f_new
                 best_sequences = [list(s) for s in sequences]
                 best_assignment = list(assignment)
+                best_metrics = list(metrics)
                 scores[d_name] += 1.0
         counts[d_name] += 1
 
@@ -230,11 +263,25 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
                 scores[name] = 0.0
                 counts[name] = 0
 
+        # 收敛曲线记录（每 10 轮）
+        if iteration % 10 == 0:
+            history.append((iteration, _global_obj(best_metrics, lambda_), f_best))
+
+        # 相对改进率终止：仅当 imp_patience 显式设置时启用
+        if imp_patience is not None and iteration - checkpoint_iter >= imp_patience:
+            delta = abs(f_best - checkpoint_fbest) / max(abs(checkpoint_fbest), 1e-9)
+            if delta < imp_threshold:
+                break
+            checkpoint_fbest = f_best
+            checkpoint_iter = iteration
+
     best = evaluate(data, best_assignment, best_sequences, lambda_)
     if verbose:
         print(f"  [ALNS] iter={iteration} accepted={accepted} "
               f"makespan={best.makespan} ΣT={best.tardiness} ΣC={best.completion} "
               f"time={time.time()-t0:.2f}s")
+    if return_history:
+        return best, history
     return best
 
 

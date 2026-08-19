@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算法迭代优化报告 · medium</title>
+<script>
+  MathJax = {
+    tex: {
+      tags: 'none',
+      inlineMath: [['$', '$'], ['\(', '\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 900px; margin: 0 auto; padding: 36px 28px; color: #1a1a2e; line-height: 1.8; }
+  h1 { font-size: 24px; border-bottom: 3px solid #4a6cf7; padding-bottom: 12px; }
+  h2 { font-size: 19px; color: #4a6cf7; margin-top: 34px; border-left: 4px solid #4a6cf7; padding-left: 10px; }
+  h3 { font-size: 16px; margin-top: 24px; color: #333; }
+  .subtitle { color: #666; font-size: 14px; margin-top: -8px; }
+  .meta { color: #888; font-size: 12px; margin-top: 6px; }
+  .stage-badge { display: inline-block; background: #4a6cf7; color: #fff; border-radius: 4px; padding: 2px 10px; font-size: 12px; margin-top: 12px; }
+  .stage-badge.pending { background: #e67e22; }
+  .eq { margin: 18px 0; text-align: left; }
+  table { border-collapse: collapse; margin: 14px 0; }
+  td, th { border: 1px solid #999; padding: 6px 18px; text-align: center; }
+  th { background: #f0f4ff; }
+  pre { background: #f6f8fa; border: 1px solid #ddd; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  .note { background: #fff8e6; border: 1px solid #f0d78a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+  footer { margin-top: 44px; color: #aaa; font-size: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+  mjx-container { font-size: 1.08em; }
+</style>
+</head>
+<body>
+<h1>算法迭代优化报告 · medium</h1>
+<div class="subtitle">多指标引导目标 + 相对改进率终止 + 迭代追溯（方案 V3 落地）</div>
+<div class="meta">OR-Expert ｜ 阶段二：算法迭代优化 ｜ 生成时间: 2026-08-19 22:48</div>
+<div class="stage-badge ok">阶段二：迭代优化报告</div>
+<h2>一、算法优化内容与方法</h2>
+<p><b>优化前</b>：ALNS 接受准则 = 单一 λ 加权目标（λ1·Cmax+λ2·ΣT+λ3·ΣC），固定时间限制终止。</p>
+<p><b>优化后（方案 V3 三处改动）</b>：① 接受准则扩展为<b>多指标引导目标</b> obj/scale + w_bal·(1−balance) + w_flex·(1−flex)，将负载均衡与可调整弹性纳入搜索引导；② 新增<b>相对改进率终止</b>（连续 N 轮改进 < δ 即停，替代固定时间限制）；③ 每次迭代记录<b>收敛曲线</b>，支持量化/对比/追溯。</p>
+<div class="note">⚠ 评测基准指标固定（makespan/ΣT/ΣC），算法引导目标可演化——「固定尺子量」，量出的进步才可对比。</div>
+<h2>二、收敛曲线（ΣT 随迭代下降）</h2>
+<figure style="text-align:center; margin:18px 0;"><img src="results/iteration/medium_convergence.png" style="max-width:100%; border:1px solid #eee; border-radius:6px;"><figcaption style="color:#666; font-size:13px; margin-top:6px;">图 1：原 ALNS vs 优化 ALNS 的 ΣT 收敛曲线</figcaption></figure>
+<h2>三、目标指标对比</h2>
+<figure style="text-align:center; margin:18px 0;"><img src="results/iteration/medium_objectives.png" style="max-width:100%; border:1px solid #eee; border-radius:6px;"><figcaption style="color:#666; font-size:13px; margin-top:6px;">图 2：makespan / ΣT / ΣC 三版本对比</figcaption></figure>
+<h2>四、质量指标对比</h2>
+<figure style="text-align:center; margin:18px 0;"><img src="results/iteration/medium_quality.png" style="max-width:100%; border:1px solid #eee; border-radius:6px;"><figcaption style="color:#666; font-size:13px; margin-top:6px;">图 3：负载均衡 / 可调整弹性 / 综合评分 三版本对比</figcaption></figure>
+<h2>五、指标明细与迭代追溯（delta）</h2>
+<table><tr><th>指标</th><th>baseline v0</th><th>原 ALNS v1</th><th>优化 ALNS v2</th><th>v2−v1 增量</th></tr><tr><td>makespan</td><td>1017</td><td>976</td><td>994</td><td>+18</td></tr><tr><td>ΣT（延误）</td><td>8149</td><td>7348</td><td>7631</td><td>+283</td></tr><tr><td>ΣC（完工）</td><td>20877</td><td>20729</td><td>20652</td><td>-77</td></tr><tr><td>负载均衡</td><td>0.8892</td><td>0.8973</td><td>0.9234</td><td>+0.0261</td></tr><tr><td>可调整弹性</td><td>0.1279</td><td>0.1133</td><td>0.1236</td><td>+0.0103</td></tr><tr><td>耗时(s)</td><td>0.00</td><td>20.00</td><td>3.13</td><td>-16.87</td></tr><tr><td>综合评分</td><td>0.3480</td><td>0.3488</td><td>0.3550</td><td>+0.0062</td></tr></table>
+<h2>六、迭代追溯快照</h2>
+<pre><code class="language-json">[
+  {
+    &quot;version&quot;: &quot;v0&quot;,
+    &quot;change&quot;: &quot;构造启发式（EDD 基线）&quot;,
+    &quot;commit&quot;: &quot;-&quot;,
+    &quot;instance&quot;: &quot;medium&quot;,
+    &quot;reference&quot;: {
+      &quot;type&quot;: &quot;lower_bound&quot;,
+      &quot;value&quot;: 683.0
+    },
+    &quot;config&quot;: {
+      &quot;lambda&quot;: [
+        0.0,
+        1.0,
+        0.0
+      ],
+      &quot;w_bal&quot;: 0.15,
+      &quot;w_flex&quot;: 0.15,
+      &quot;instance&quot;: &quot;medium&quot;,
+      &quot;seed&quot;: 42
+    },
+    &quot;metrics&quot;: {
+      &quot;objective&quot;: 8149.0,
+      &quot;obj_norm&quot;: 10.931186,
+      &quot;makespan&quot;: 1017,
+      &quot;tardiness&quot;: 8149,
+      &quot;completion&quot;: 20877,
+      &quot;gap&quot;: 10.931186,
+      &quot;gap_type&quot;: &quot;reference&quot;,
+      &quot;hard_violation&quot;: 0.0,
+      &quot;soft_violation&quot;: 8149.0,
+      &quot;solve_time&quot;: 0.001394,
+      &quot;cv&quot;: 0.0,
+      &quot;balance&quot;: 0.889206,
+      &quot;flex&quot;: 0.12795,
+      &quot;lower_bound&quot;: 683.0
+    },
+    &quot;score&quot;: 0.348033,
+    &quot;delta&quot;: null
+  },
+  {
+    &quot;version&quot;: &quot;v1&quot;,
+    &quot;change&quot;: &quot;原 ALNS（纯 λ 目标）&quot;,
+    &quot;commit&quot;: &quot;-&quot;,
+    &quot;instance&quot;: &quot;medium&quot;,
+    &quot;reference&quot;: {
+      &quot;type&quot;: &quot;lower_bound&quot;,
+      &quot;value&quot;: 683.0
+    },
+    &quot;config&quot;: {
+      &quot;lambda&quot;: [
+        0.0,
+        1.0,
+        0.0
+      ],
+      &quot;w_bal&quot;: 0.15,
+      &quot;w_flex&quot;: 0.15,
+      &quot;instance&quot;: &quot;medium&quot;,
+      &quot;seed&quot;: 42
+    },
+    &quot;metrics&quot;: {
+      &quot;objective&quot;: 7348.0,
+      &quot;obj_norm&quot;: 9.758419,
+      &quot;makespan&quot;: 976,
+      &quot;tardiness&quot;: 7348,
+      &quot;completion&quot;: 20729,
+      &quot;gap&quot;: 9.758419,
+      &quot;gap_type&quot;: &quot;reference&quot;,
+      &quot;hard_violation&quot;: 0.0,
+      &quot;soft_violation&quot;: 7348.0,
+      &quot;solve_time&quot;: 20.000118,
+      &quot;cv&quot;: 0.0,
+      &quot;balance&quot;: 0.897314,
+      &quot;flex&quot;: 0.113345,
+      &quot;lower_bound&quot;: 683.0
+    },
+    &quot;score&quot;: 0.348817,
+    &quot;delta&quot;: {
+      &quot;objective&quot;: -801.0,
+      &quot;makespan&quot;: -41,
+      &quot;tardiness&quot;: -801,
+      &quot;completion&quot;: -148,
+      &quot;balance&quot;: 0.008108,
+      &quot;flex&quot;: -0.014605,
+      &quot;cv&quot;: 0.0,
+      &quot;score&quot;: 0.000784
+    }
+  },
+  {
+    &quot;version&quot;: &quot;v2&quot;,
+    &quot;change&quot;: &quot;优化 ALNS（多指标引导 + 智能终止）&quot;,
+    &quot;commit&quot;: &quot;-&quot;,
+    &quot;instance&quot;: &quot;medium&quot;,
+    &quot;reference&quot;: {
+      &quot;type&quot;: &quot;lower_bound&quot;,
+      &quot;value&quot;: 683.0
+    },
+    &quot;config&quot;: {
+      &quot;lambda&quot;: [
+        0.0,
+        1.0,
+        0.0
+      ],
+      &quot;w_bal&quot;: 0.15,
+      &quot;w_flex&quot;: 0.15,
+      &quot;instance&quot;: &quot;medium&quot;,
+      &quot;seed&quot;: 42
+    },
+    &quot;metrics&quot;: {
+      &quot;objective&quot;: 7631.0,
+      &quot;obj_norm&quot;: 10.172767,
+      &quot;makespan&quot;: 994,
+      &quot;tardiness&quot;: 7631,
+      &quot;completion&quot;: 20652,
+      &quot;gap&quot;: 10.172767,
+      &quot;gap_type&quot;: &quot;reference&quot;,
+      &quot;hard_violation&quot;: 0.0,
+      &quot;soft_violation&quot;: 7631.0,
+      &quot;solve_time&quot;: 3.133901,
+      &quot;cv&quot;: 0.0,
+      &quot;balance&quot;: 0.923435,
+      &quot;flex&quot;: 0.123617,
+      &quot;lower_bound&quot;: 683.0
+    },
+    &quot;score&quot;: 0.355043,
+    &quot;delta&quot;: {
+      &quot;objective&quot;: 283.0,
+      &quot;makespan&quot;: 18,
+      &quot;tardiness&quot;: 283,
+      &quot;completion&quot;: -77,
+      &quot;balance&quot;: 0.026121,
+      &quot;flex&quot;: 0.010271,
+      &quot;cv&quot;: 0.0,
+      &quot;score&quot;: 0.006226
+    }
+  }
+]</code></pre>
+<div class="note">⚠ 诚实声明：tardiness 目标绝对 gap 本质松（下界无法捕捉排队延误），故 gap 仅作保守报告；迭代进步以「综合评分 + 相对改进率」量化。快照完整 JSON 存 docs/results/iteration/。</div>
+<footer>OR-Expert 过程报告 ｜ 公式为 LaTeX 源码内嵌，可直接编辑后刷新浏览器重新渲染</footer>
+</body>
+</html>

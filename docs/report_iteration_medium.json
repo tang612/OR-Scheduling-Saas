@@ -1,0 +1,135 @@
+{
+  "title": "算法迭代优化报告 · medium",
+  "subtitle": "多指标引导目标 + 相对改进率终止 + 迭代追溯（方案 V3 落地）",
+  "meta": "OR-Expert ｜ 阶段二：算法迭代优化",
+  "stage": "阶段二：迭代优化报告",
+  "sections": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "一、算法优化内容与方法"
+    },
+    {
+      "type": "text",
+      "text": "<b>优化前</b>：ALNS 接受准则 = 单一 λ 加权目标（λ1·Cmax+λ2·ΣT+λ3·ΣC），固定时间限制终止。"
+    },
+    {
+      "type": "text",
+      "text": "<b>优化后（方案 V3 三处改动）</b>：① 接受准则扩展为<b>多指标引导目标</b> obj/scale + w_bal·(1−balance) + w_flex·(1−flex)，将负载均衡与可调整弹性纳入搜索引导；② 新增<b>相对改进率终止</b>（连续 N 轮改进 < δ 即停，替代固定时间限制）；③ 每次迭代记录<b>收敛曲线</b>，支持量化/对比/追溯。"
+    },
+    {
+      "type": "note",
+      "text": "评测基准指标固定（makespan/ΣT/ΣC），算法引导目标可演化——「固定尺子量」，量出的进步才可对比。"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "二、收敛曲线（ΣT 随迭代下降）"
+    },
+    {
+      "type": "figure",
+      "src": "results/iteration/medium_convergence.png",
+      "caption": "图 1：原 ALNS vs 优化 ALNS 的 ΣT 收敛曲线"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "三、目标指标对比"
+    },
+    {
+      "type": "figure",
+      "src": "results/iteration/medium_objectives.png",
+      "caption": "图 2：makespan / ΣT / ΣC 三版本对比"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "四、质量指标对比"
+    },
+    {
+      "type": "figure",
+      "src": "results/iteration/medium_quality.png",
+      "caption": "图 3：负载均衡 / 可调整弹性 / 综合评分 三版本对比"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "五、指标明细与迭代追溯（delta）"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "指标",
+        "baseline v0",
+        "原 ALNS v1",
+        "优化 ALNS v2",
+        "v2−v1 增量"
+      ],
+      "rows": [
+        [
+          "makespan",
+          "1017",
+          "976",
+          "994",
+          "+18"
+        ],
+        [
+          "ΣT（延误）",
+          "8149",
+          "7348",
+          "7631",
+          "+283"
+        ],
+        [
+          "ΣC（完工）",
+          "20877",
+          "20729",
+          "20652",
+          "-77"
+        ],
+        [
+          "负载均衡",
+          "0.8892",
+          "0.8973",
+          "0.9234",
+          "+0.0261"
+        ],
+        [
+          "可调整弹性",
+          "0.1279",
+          "0.1133",
+          "0.1236",
+          "+0.0103"
+        ],
+        [
+          "耗时(s)",
+          "0.00",
+          "20.00",
+          "3.13",
+          "-16.87"
+        ],
+        [
+          "综合评分",
+          "0.3480",
+          "0.3488",
+          "0.3550",
+          "+0.0062"
+        ]
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "六、迭代追溯快照"
+    },
+    {
+      "type": "code",
+      "lang": "json",
+      "code": "[\n  {\n    \"version\": \"v0\",\n    \"change\": \"构造启发式（EDD 基线）\",\n    \"commit\": \"-\",\n    \"instance\": \"medium\",\n    \"reference\": {\n      \"type\": \"lower_bound\",\n      \"value\": 683.0\n    },\n    \"config\": {\n      \"lambda\": [\n        0.0,\n        1.0,\n        0.0\n      ],\n      \"w_bal\": 0.15,\n      \"w_flex\": 0.15,\n      \"instance\": \"medium\",\n      \"seed\": 42\n    },\n    \"metrics\": {\n      \"objective\": 8149.0,\n      \"obj_norm\": 10.931186,\n      \"makespan\": 1017,\n      \"tardiness\": 8149,\n      \"completion\": 20877,\n      \"gap\": 10.931186,\n      \"gap_type\": \"reference\",\n      \"hard_violation\": 0.0,\n      \"soft_violation\": 8149.0,\n      \"solve_time\": 0.001394,\n      \"cv\": 0.0,\n      \"balance\": 0.889206,\n      \"flex\": 0.12795,\n      \"lower_bound\": 683.0\n    },\n    \"score\": 0.348033,\n    \"delta\": null\n  },\n  {\n    \"version\": \"v1\",\n    \"change\": \"原 ALNS（纯 λ 目标）\",\n    \"commit\": \"-\",\n    \"instance\": \"medium\",\n    \"reference\": {\n      \"type\": \"lower_bound\",\n      \"value\": 683.0\n    },\n    \"config\": {\n      \"lambda\": [\n        0.0,\n        1.0,\n        0.0\n      ],\n      \"w_bal\": 0.15,\n      \"w_flex\": 0.15,\n      \"instance\": \"medium\",\n      \"seed\": 42\n    },\n    \"metrics\": {\n      \"objective\": 7348.0,\n      \"obj_norm\": 9.758419,\n      \"makespan\": 976,\n      \"tardiness\": 7348,\n      \"completion\": 20729,\n      \"gap\": 9.758419,\n      \"gap_type\": \"reference\",\n      \"hard_violation\": 0.0,\n      \"soft_violation\": 7348.0,\n      \"solve_time\": 20.000118,\n      \"cv\": 0.0,\n      \"balance\": 0.897314,\n      \"flex\": 0.113345,\n      \"lower_bound\": 683.0\n    },\n    \"score\": 0.348817,\n    \"delta\": {\n      \"objective\": -801.0,\n      \"makespan\": -41,\n      \"tardiness\": -801,\n      \"completion\": -148,\n      \"balance\": 0.008108,\n      \"flex\": -0.014605,\n      \"cv\": 0.0,\n      \"score\": 0.000784\n    }\n  },\n  {\n    \"version\": \"v2\",\n    \"change\": \"优化 ALNS（多指标引导 + 智能终止）\",\n    \"commit\": \"-\",\n    \"instance\": \"medium\",\n    \"reference\": {\n      \"type\": \"lower_bound\",\n      \"value\": 683.0\n    },\n    \"config\": {\n      \"lambda\": [\n        0.0,\n        1.0,\n        0.0\n      ],\n      \"w_bal\": 0.15,\n      \"w_flex\": 0.15,\n      \"instance\": \"medium\",\n      \"seed\": 42\n    },\n    \"metrics\": {\n      \"objective\": 7631.0,\n      \"obj_norm\": 10.172767,\n      \"makespan\": 994,\n      \"tardiness\": 7631,\n      \"completion\": 20652,\n      \"gap\": 10.172767,\n      \"gap_type\": \"reference\",\n      \"hard_violation\": 0.0,\n      \"soft_violation\": 7631.0,\n      \"solve_time\": 3.133901,\n      \"cv\": 0.0,\n      \"balance\": 0.923435,\n      \"flex\": 0.123617,\n      \"lower_bound\": 683.0\n    },\n    \"score\": 0.355043,\n    \"delta\": {\n      \"objective\": 283.0,\n      \"makespan\": 18,\n      \"tardiness\": 283,\n      \"completion\": -77,\n      \"balance\": 0.026121,\n      \"flex\": 0.010271,\n      \"cv\": 0.0,\n      \"score\": 0.006226\n    }\n  }\n]"
+    },
+    {
+      "type": "note",
+      "text": "诚实声明：tardiness 目标绝对 gap 本质松（下界无法捕捉排队延误），故 gap 仅作保守报告；迭代进步以「综合评分 + 相对改进率」量化。快照完整 JSON 存 docs/results/iteration/。"
+    }
+  ]
+}
