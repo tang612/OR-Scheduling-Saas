@@ -4,7 +4,7 @@
 
 ## 项目现状（截至 2026-08）
 
-本项目已完成 **多机台智能排产算法** 的核心引擎与四层测试（L1~L4），L5 大规模压力测试待后续补充。当前交付的是**可运行、可验证、可追溯**的调度求解内核，后续可无缝接入 SaaS 平台。
+本项目已完成 **多机台智能排产算法** 的核心引擎与五层测试（L1~L5）。当前交付的是**可运行、可验证、可追溯**的调度求解内核，后续可无缝接入 SaaS 平台。
 
 | 阶段 | 状态 |
 |------|------|
@@ -14,7 +14,7 @@
 | 算法核心代码（CP-SAT + 构造启发式 + ALNS） | ✅ 完成 |
 | 四层测试 L1~L4（含性能数据 + 自动约束验证） | ✅ 完成 |
 | 算法迭代优化（解质量评价体系 + 多指标引导 + 智能终止） | ✅ 完成 |
-| L5 massive 极限压力测试 | ⏳ 待补 |
+| L5 massive 极限压力测试（相对改进率终止，约束验证 0 错误） | ✅ 完成 |
 
 ---
 
@@ -39,7 +39,7 @@
 
 ---
 
-## 四层测试结果（性能数据）
+## 五层测试结果（性能数据）
 
 | 层级 | 规模 | 状态 | 求解器 | makespan | ΣT | 耗时 | 验证 |
 |------|------|------|--------|----------|-----|------|------|
@@ -47,8 +47,9 @@
 | L2 boundary | 4机×12单(8 null) | OPTIMAL | CP-SAT | 570 | 1270 | 24.7s | ✓ null 正确处理 |
 | L3 medium | 8机×50单 | FEASIBLE | 构造+ALNS | 933 | 7292 | 300s | ✓ 约束通过 |
 | L4 large | 20机×200单 | FEASIBLE | 构造+ALNS | 2120 | 53169 | 900s | ✓ 30万次迭代 |
+| L5 massive | 30机×500单(64 null) | FEASIBLE | 构造+ALNS(相对改进率终止) | 2987 | 180174 | 235s | ✓ 0错误 CV=0.0035 |
 
-详见 `docs/test-reports/`（L1~L4 报告 + 汇总）。
+详见 `docs/test-reports/`（L1~L5 报告 + 汇总）。
 
 ---
 
@@ -92,11 +93,12 @@ OR-Scheduling-Saas/
 │   │   └── visualize.py    # 分层可视化（负载图/热力图/延误散点/甘特图）
 │   ├── run_scheduler.py    # CLI 单层求解
 │   ├── run_tests.py        # L1-L4 测试 + 约束验证
-│   └── run_iteration.py    # 算法迭代优化实验 + HTML 报告
+│   ├── run_iteration.py    # 算法迭代优化实验 + HTML 报告
+│   └── run_l5.py           # L5 massive 正式测试 + 报告
 ├── tests/unit/             # 单元测试
 ├── docs/
 │   ├── personality/        # Personality 最终版
-│   ├── test-reports/       # 四层测试报告
+│   ├── test-reports/       # 五层测试报告（L1~L5）
 │   ├── bootstrap-log.md    # 自举迭代日志
 │   └── anti-hallucination-checklist.md  # 反幻觉核对清单
 └── skills/                 # 三条流水线 Skill
@@ -121,6 +123,9 @@ python -m pytest tests/unit/ -v
 
 # 运行算法迭代优化实验（生成 HTML 报告）
 python scripts/run_iteration.py
+
+# 运行 L5 massive 正式测试（相对改进率终止，不做固定时间约束）
+python scripts/run_l5.py
 ```
 
 输入数据为 5 个 JSON（machines / orders / recipes / switch_matrix / metadata），格式见 `mip_course/data/{toy,boundary,medium,large,massive}`。
@@ -135,7 +140,7 @@ python scripts/run_iteration.py
 | Agent 人格自举迭代日志 | `docs/bootstrap-log.md` | 人格 V2.1→V3.2 自举迭代史 + 本项目增量 |
 | 反幻觉核对清单 | `docs/anti-hallucination-checklist.md` | 三步制 + 红线 + 六维校验 |
 | 三条流水线 Skill | `skills/{app-dev-flow,change-request,debug}/SKILL.md` | 开发/变更/调试流程 |
-| 四层测试报告 | `docs/test-reports/` | L1~L4 报告 + 汇总 |
+| 五层测试报告 | `docs/test-reports/` | L1~L5 报告 + 汇总 |
 | 解质量评价体系方案 | `docs/solution-quality-evaluation-design.md` | 方案 V3（含 gap 检索 + 迭代追溯） |
 | 算法迭代优化报告 | `docs/算法迭代优化报告_medium.html` | 迭代优化可视化 + 指标变化 |
 
