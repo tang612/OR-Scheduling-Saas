@@ -1,0 +1,31 @@
+# OR-Scheduling-SaaS API 镜像
+# build context = 项目根（见 docker-compose.yml: context: ..）
+FROM python:3.14-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# CP-SAT 依赖 OpenMP 运行时（ortools manylinux wheel 需要 libgomp）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# solver-core（先装：提供 scheduler 包，backend 依赖它）
+COPY solver-core /app/solver-core
+RUN pip install /app/solver-core
+
+# backend
+COPY backend /app/backend
+RUN pip install -r /app/backend/requirements.txt
+
+# 非 root 运行
+RUN useradd -m appuser
+USER appuser
+
+WORKDIR /app/backend
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

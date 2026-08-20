@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solver-core"
+version = "0.1.0"
+description = "多机台智能排产求解核心：CP-SAT 精确 + 构造/ALNS 元启发 + 规模路由"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "ortools>=9.15,<10",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.8", "numpy>=1.26"]
+
+[tool.setuptools]
+packages = ["scheduler"]

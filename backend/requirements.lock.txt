@@ -1,0 +1,11 @@
+# 精确锁定（本机 miniconda Python 3.14.6 实测，2026-08-20）
+# 使用：pip install -r requirements.lock.txt
+fastapi==0.141.1
+uvicorn==0.52.4
+starlette==1.6.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+httptools==0.8.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==17.0.1
