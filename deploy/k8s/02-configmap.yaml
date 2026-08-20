@@ -1,0 +1,15 @@
+# 非敏感配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: or-scheduling-config
+  namespace: or-scheduling
+data:
+  ENVIRONMENT: "prod"
+  MONGO_URI: "mongodb://mongo:27017/or_scheduling"
+  REDIS_URL: "redis://redis:6379/0"
+  JWT_ACCESS_TTL_MIN: "15"
+  JWT_REFRESH_TTL_DAYS: "7"
+  RATE_LIMIT_PER_MIN: "120"
+  AUTH_RATE_LIMIT_PER_MIN: "5"
+  CORS_ORIGINS: "https://or-scheduling.example.com"

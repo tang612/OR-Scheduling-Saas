@@ -4,10 +4,14 @@ FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 
 # CP-SAT 依赖 OpenMP 运行时（ortools manylinux wheel 需要 libgomp）
-RUN apt-get update \
+# 国内镜像加速 apt（deb.debian.org 在受限网络下缓慢）
+RUN sed -i 's|http://deb.debian.org/debian|http://mirrors.tuna.tsinghua.edu.cn/debian|g; s|http://deb.debian.org/debian-security|http://mirrors.tuna.tsinghua.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,8 +25,9 @@ RUN pip install /app/solver-core
 COPY backend /app/backend
 RUN pip install -r /app/backend/requirements.txt
 
-# 非 root 运行
-RUN useradd -m appuser
+# 非 root 运行（chown：macOS 源码 600 权限，非 root 用户需属主可读）
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
 WORKDIR /app/backend

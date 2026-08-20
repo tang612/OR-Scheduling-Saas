@@ -1,0 +1,77 @@
+{
+  "title": "三机并行车间调度（makespan）· 优化方案过程报告",
+  "subtitle": "问题类型: $P_3 \\mid \\text{chains} \\mid C_{\\max}$ ｜ 复杂度: NP-难 ｜ 求解器: OR-Tools CP-SAT 9.x",
+  "meta": "OR-Expert ｜ 任务: 7 工件 / 21 道工序 / 3 台同速机",
+  "stage": "阶段二：完整报告（已完成）",
+  "sections": [
+    {"type": "heading", "level": 2, "text": "一、问题描述"},
+    {"type": "text", "text": "车间有 3 台性能完全相同的加工机器，需加工 7 个工件。每个工件含 2~5 道工序，必须严格按工艺顺序依次加工（前道全部完工后，后道才能开始）；每道工序可选任意一台机器加工，时长不受机器影响；同一机器同一时间只能加工一道工序，工序不可中断。目标：<b>最小化最大完工时间（makespan $C_{\\max}$）</b>，无权重。"},
+    {"type": "table", "headers": ["工件", "工序数", "各工序加工时间（小时）", "总加工时间"], "rows": [
+      ["J1", "3", "2, 1, 2", "5.0"],
+      ["J2", "2", "1, 1", "2.0"],
+      ["J3", "4", "1, 0.5, 0.5, 1", "3.0"],
+      ["J4", "2", "0.5, 0.5", "1.0"],
+      ["J5", "5", "1, 0.5, 0.3, 1.5, 0.5", "3.8"],
+      ["J6", "1", "0.5", "0.5"],
+      ["J7", "4", "0.2, 0.3, 0.5, 0.2", "1.2"],
+      ["合计", "21", "—", "16.5"]]},
+    {"type": "note", "text": "下界估计（求解前）: $C_{\\max} \\ge \\max(16.5/3,\\ 最长工件链) = \\max(5.5,\\ 5.0\\ \\text{(J1)}) = 5.5$ 小时——求解后验证最优性。"},
+
+    {"type": "heading", "level": 2, "text": "二、数学模型"},
+
+    {"type": "heading", "level": 3, "text": "集合 Sets"},
+    {"type": "math", "tex": "\\mathcal{J} = \\{1, \\ldots, 7\\} \\quad \\text{工件}, \\qquad \\mathcal{M} = \\{1, 2, 3\\} \\quad \\text{机器}, \\qquad \\mathcal{O}_j = \\{1, \\ldots, n_j\\} \\quad \\text{工件 } j \\text{ 的工序序列}"},
+
+    {"type": "heading", "level": 3, "text": "参数 Parameters"},
+    {"type": "math", "tex": "p_{jk} \\in \\mathbb{Z}_{+}: \\text{工序 } (j,k) \\text{ 的加工时间（小时 } \\times 10 \\text{，整数化）}"},
+
+    {"type": "heading", "level": 3, "text": "决策变量 Decision Variables"},
+    {"type": "math", "tex": "S_{jk} \\ge 0: \\text{工序 } (j,k) \\text{ 开工时间}, \\qquad E_{jk} = S_{jk} + p_{jk}: \\text{完工时间}"},
+    {"type": "math", "tex": "y_{jkm} \\in \\{0, 1\\}: \\text{工序 } (j,k) \\text{ 是否分配在机器 } m, \\qquad C_{\\max} \\ge 0: \\text{makespan}"},
+
+    {"type": "heading", "level": 3, "text": "目标函数 Objective"},
+    {"type": "math", "tex": "\\min \\, C_{\\max}", "tag": "(1)"},
+
+    {"type": "heading", "level": 3, "text": "约束条件 Constraints"},
+    {"type": "math", "tex": "S_{j,k+1} \\ge E_{jk}, \\quad \\forall j \\in \\mathcal{J},\\ k = 1, \\ldots, n_j - 1 \\qquad \\text{工序链：前道完工后道才开工}", "tag": "(2)"},
+    {"type": "math", "tex": "\\sum_{m \\in \\mathcal{M}} y_{jkm} = 1, \\quad \\forall (j,k) \\qquad \\text{每道工序恰选一台机器}", "tag": "(3)"},
+    {"type": "math", "tex": "\\text{每台机器 } m \\text{ 上所有工序区间 } [S_{jk},\\, E_{jk}) \\text{ 两两不重叠（NoOverlap）}", "tag": "(4)"},
+    {"type": "math", "tex": "C_{\\max} \\ge E_{j,n_j}, \\quad \\forall j \\in \\mathcal{J} \\qquad \\text{每工件最后一道工序不晚于 makespan}", "tag": "(5)"},
+    {"type": "math", "tex": "S_{jk} \\ge 0, \\quad C_{\\max} \\ge 0 \\qquad \\text{变量域}", "tag": "(6)"},
+
+    {"type": "heading", "level": 2, "text": "三、数值声明与复杂度"},
+    {"type": "text", "text": "<b>时间单位</b>: 小时 $\\times 10$ 转整数（0.2h → 2 单位），CP-SAT 整数域精确求解。"},
+    {"type": "text", "text": "<b>Big-M</b>: interval 模型无 Big-$M$（NoOverlap 原生表达）；MIP 备选方案取 $M = 165$（总加工 16.5h $\\times 10$）。"},
+    {"type": "text", "text": "<b>对称性</b>: 3 台机器完全相同，可选对称性破坏约束，小规模非必需。"},
+    {"type": "text", "text": "<b>复杂度</b>: NP-难 ｜ 求解器: OR-Tools CP-SAT 9.x ｜ 规模: 21 工序 $\\times$ 3 机器。"},
+
+    {"type": "heading", "level": 2, "text": "四、求解结果"},
+    {"type": "text", "text": "<b>最优 makespan = 5.5 小时</b>（CP-SAT OPTIMAL，零 gap）——恰好等于理论下界 $\\max(16.5/3,\\ 5.0) = 5.5$，<b>最优性被下界直接证明</b>。三台机器从 0 到 5.5h 全程满载、无任何空闲。"},
+    {"type": "table", "headers": ["机器", "工序数", "负载（小时）", "利用率（makespan 内）"], "rows": [
+      ["M1", "8", "5.5", "100%"],
+      ["M2", "6", "5.5", "100%"],
+      ["M3", "7", "5.5", "100%"]]},
+    {"type": "figure", "src": "parallel_machines_gantt.png", "caption": "图 1: 最优调度甘特图（三机满载，makespan = 5.5h）"},
+    {"type": "text", "text": "<b>结果解读</b>: 总加工量 16.5h 恰好被 3 台机器均分（各 5.5h）——本实例的 makespan 下界由「总负载 / 机器数」主导（5.5h > 最长链 5.0h），调度达到容量极限。J5 的 1.5h 长工序（J5-4）与 J1 的 5h 长链是关键路径元素，被精确交错排布。"},
+
+    {"type": "heading", "level": 2, "text": "五、求解代码（逐行注释公式编号）"},
+    {"type": "text", "text": "完整可运行脚本（CP-SAT interval + NoOverlap + precedence），代码行注释对应公式编号 (1)-(6):"},
+    {"type": "code_file", "path": "scripts/parallel_machines_cp_sat.py", "lang": "python"},
+
+    {"type": "heading", "level": 2, "text": "六、业务解读"},
+    {"type": "text", "text": "<b>1. 解的物理含义</b>: 三台机器 0→5.5h 连续满负荷；J1（链长 5h）跨 M3→M3→M2，J5 长工序 J5-4（1.5h）独占 M1 中段；所有 21 道工序在 5.5h 内完成。"},
+    {"type": "text", "text": "<b>2. 瓶颈与杠杆点</b>: 本例瓶颈是<b>总产能</b>（16.5h / 3 机 = 5.5h），而非某台机器——三机均衡满载；真正约束是总加工量与机器数之比。若需进一步压缩 makespan，唯一杠杆是<b>增加机器或缩短总加工量</b>。"},
+    {"type": "text", "text": "<b>3. 敏感性分析</b>: 机器数 3→2 时下界升至 8.25h（产能紧张）；3→4 时下界降至 4.125h，但受 J1 最长链 5.0h 约束，实际 makespan 无法低于 5h——<b>机器边际收益递减</b>。J1 链缩短 1h 不影响本解（容量下界主导）；总加工量 ±1h 则 makespan 下界 ±0.33h。"},
+    {"type": "text", "text": "<b>4. 行动建议</b>: 当前 3 台机器在既有订单下已达容量极限——新订单将直接推高 makespan；扩产前先评估「4 台机器 vs 加班」的成本（4 台仅能压到 5h，受最长链限制，收益有限）。调度可复用本模型滚动重排（订单变更时重跑，秒级出解）。"},
+
+    {"type": "heading", "level": 2, "text": "七、六维核对清单"},
+    {"type": "table", "headers": ["维度", "检查项", "结论"], "rows": [
+      ["数据层", "7 工件 21 工序参数完整；时长 ×10 整数化口径一致", "✓ 通过"],
+      ["建模正确性", "目标=最小化 makespan；工序链/不可中断/单机规则 → 约束 (2)(4)", "✓ 通过"],
+      ["数学合理性", "无冗余/矛盾约束；可行域非空；下界 5.5h 达到 → 最优性证明", "✓ 通过"],
+      ["公式-代码一致性", "代码逐行标注公式编号 (1)-(6)，与模型一致", "✓ 通过"],
+      ["求解适配性", "NP-难→CP-SAT 精确求解，status=OPTIMAL 零 gap；下界验证一致", "✓ 通过"],
+      ["边界鲁棒性", "含单工序工件 J6、0.2h 细粒度工序、链长差异 0.5~5h 的边界覆盖", "✓ 通过"]]},
+    {"type": "note", "text": "测试边界声明: 本案例为 L1~L2 级（小规模 + 边界覆盖）；L4 大规模（数百工序）性能测试留待生产规模任务；最优性由「下界=解值」证明，非穷举。"}
+  ]
+}

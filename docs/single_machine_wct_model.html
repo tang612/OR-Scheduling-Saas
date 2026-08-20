@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单机加权完工时间最小化 · 可视化数学模型（OR-Expert）</title>
+<script>
+  MathJax = {
+    tex: {
+      tags: 'ams',
+      inlineMath: [['$', '$'], ['\\(', '\\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 860px; margin: 0 auto; padding: 32px 24px; color: #1a1a2e; line-height: 1.7; }
+  h1 { font-size: 22px; border-bottom: 2px solid #4a6cf7; padding-bottom: 10px; }
+  h2 { font-size: 18px; color: #4a6cf7; margin-top: 32px; }
+  h3 { font-size: 15px; margin-top: 22px; }
+  table { border-collapse: collapse; margin: 12px auto; }
+  td, th { border: 1px solid #999; padding: 6px 18px; text-align: center; }
+  th { background: #f0f4ff; }
+  .box { background: #f7f9ff; border: 1px solid #d5defc; border-radius: 8px; padding: 14px 18px; margin: 14px 0; }
+  .tag { display: inline-block; background: #4a6cf7; color: #fff; border-radius: 4px; padding: 1px 8px; font-size: 12px; margin-right: 6px; }
+  .eq { margin: 14px 0; }
+  mjx-container { font-size: 1.05em; }
+</style>
+</head>
+<body>
+
+<h1>单机加权完工时间最小化 &nbsp;<span class="tag">1 ∥ Σ w<sub>j</sub>C<sub>j</sub></span></h1>
+<p><b>OR-Expert · 阶段一：数学模型</b>（公式编号 (1)–(4) 与求解代码逐行对应）</p>
+
+<h2>一、问题描述</h2>
+<p>一台加工机器需处理 3 个生产作业。每个作业一旦开始加工就不能中断，同一时间机器只能处理一个作业。目标：安排作业加工顺序，使所有作业的<b>加权完工时间总和最小</b>。</p>
+
+<table>
+  <tr><th>作业 $j$</th><th>加工时间 $p_j$（小时）</th><th>权重 $w_j$</th></tr>
+  <tr><td>1</td><td>2</td><td>3</td></tr>
+  <tr><td>2</td><td>3</td><td>1</td></tr>
+  <tr><td>3</td><td>1</td><td>2</td></tr>
+</table>
+
+<h2>二、数学模型</h2>
+
+<h3>集合 Sets</h3>
+<div class="box">
+$$\mathcal{J} = \{1, 2, 3\} \quad \text{（作业集合）}, \qquad
+\mathcal{K} = \{1, 2, 3\} \quad \text{（加工位置集合）}$$
+</div>
+
+<h3>参数 Parameters</h3>
+<div class="box">
+$$p_j \in \mathbb{Z}_+ : \text{作业 } j \text{ 的加工时间（小时）}, \qquad
+w_j \in \mathbb{Z}_+ : \text{作业 } j \text{ 的权重（优先级）}$$
+</div>
+
+<h3>决策变量 Decision Variables</h3>
+<div class="box">
+$$x_{jk} \in \{0, 1\}, \quad \forall j \in \mathcal{J},\ k \in \mathcal{K}$$
+<p style="text-align:center; margin:6px 0 0;">$x_{jk} = 1$ 当且仅当作业 $j$ 排在第 $k$ 个位置</p>
+</div>
+
+<h3>目标函数 Objective</h3>
+<div class="box">
+\begin{equation}
+\min \sum_{k \in \mathcal{K}} C_k \sum_{j \in \mathcal{J}} w_j \, x_{jk}
+\label{eq:objective}
+\end{equation}
+</div>
+
+<h3>约束条件 Constraints</h3>
+<div class="box">
+\begin{align}
+\sum_{k \in \mathcal{K}} x_{jk} &= 1, \quad \forall j \in \mathcal{J}
+  \label{eq:one-position-per-job} \tag{2} \\
+\sum_{j \in \mathcal{J}} x_{jk} &= 1, \quad \forall k \in \mathcal{K}
+  \label{eq:one-job-per-position} \tag{3} \\
+C_k &= \sum_{l=1}^{k} \sum_{j \in \mathcal{J}} p_j \, x_{jl}, \quad \forall k \in \mathcal{K}
+  \label{eq:completion-time} \tag{4}
+\end{align}
+</div>
+
+<h2>三、数值声明与复杂度</h2>
+<div class="box">
+<ul>
+  <li><b>数值卫生</b>：无 Big-$M$ 约束（位置模型天然线性）；参数均为整数小时，量纲一致，无需缩放；CP-SAT 整数域精确求解。</li>
+  <li><b>复杂度</b>：$\mathcal{P}$ 类（多项式可解）——WSPT / Smith 规则（按 $p_j / w_j$ 升序）即最优，解析解用于交叉验证。</li>
+  <li><b>求解器</b>：OR-Tools CP-SAT 9.x（项目默认栈）。</li>
+  <li><b>关键假设</b>：加工时间确定已知（强假设）；无释放时间、无截止日期、无机器停机（弱假设）。</li>
+</ul>
+</div>
+
+<p style="margin-top:40px; color:#888; font-size:12px;">OR-Expert · 阶段一输出 · 人工审核门禁：请确认模型是否满足需求后再进入代码实现阶段</p>
+
+</body>
+</html>

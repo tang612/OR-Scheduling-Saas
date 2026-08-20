@@ -12,7 +12,8 @@ from ortools.sat.python import cp_model
 from .model import DataModel, evaluate
 
 
-def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None):
+def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None,
+                  progress_cb=None, cancel=None):
     """构建并求解 CP-SAT 模型，返回 (status, Schedule, objective, gap)。"""
     model = cp_model.CpModel()
     n, m = data.n, data.m
@@ -114,8 +115,22 @@ def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None):
     if time_limit is not None:
         solver.parameters.max_time_in_seconds = time_limit
     solver.parameters.num_workers = 8
+
+    if progress_cb:
+        progress_cb(0.3, "CP-SAT求解")
     t0 = time.time()
-    status = solver.Solve(model)
+    if cancel is not None:
+        class _CancelCb(cp_model.CpSolverSolutionCallback):
+            def __init__(self, fn):
+                super().__init__()
+                self._fn = fn
+
+            def on_solution_callback(self):
+                if self._fn():
+                    self.StopSearch()
+        status = solver.Solve(model, _CancelCb(cancel))
+    else:
+        status = solver.Solve(model)
     wall = time.time() - t0
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -155,9 +170,14 @@ def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None):
 
 
 def solve(data: DataModel, lambda_: tuple, time_limit: float | None = None,
-          verbose: bool = True):
-    """CP-SAT 精确求解入口。返回 dict。"""
-    status, sched, obj_expr, gap, wall = _solve_cp_sat(data, lambda_, time_limit)
+          verbose: bool = True, progress_cb=None, cancel=None):
+    """CP-SAT 精确求解入口。返回 dict。
+
+    progress_cb(percent, stage)：进度回调（可选）。
+    cancel() -> bool：取消检查（可选，返回 True 则软停止并返回当前最优解）。
+    """
+    status, sched, obj_expr, gap, wall = _solve_cp_sat(
+        data, lambda_, time_limit, progress_cb, cancel)
     status_name = {
         cp_model.OPTIMAL: "OPTIMAL",
         cp_model.FEASIBLE: "FEASIBLE",

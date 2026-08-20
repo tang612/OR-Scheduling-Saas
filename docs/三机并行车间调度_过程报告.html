@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三机并行车间调度（makespan）· 优化方案过程报告</title>
+<script>
+  MathJax = {
+    tex: {
+      tags: 'none',
+      inlineMath: [['$', '$'], ['\(', '\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 900px; margin: 0 auto; padding: 36px 28px; color: #1a1a2e; line-height: 1.8; }
+  h1 { font-size: 24px; border-bottom: 3px solid #4a6cf7; padding-bottom: 12px; }
+  h2 { font-size: 19px; color: #4a6cf7; margin-top: 34px; border-left: 4px solid #4a6cf7; padding-left: 10px; }
+  h3 { font-size: 16px; margin-top: 24px; color: #333; }
+  .subtitle { color: #666; font-size: 14px; margin-top: -8px; }
+  .meta { color: #888; font-size: 12px; margin-top: 6px; }
+  .stage-badge { display: inline-block; background: #4a6cf7; color: #fff; border-radius: 4px; padding: 2px 10px; font-size: 12px; margin-top: 12px; }
+  .stage-badge.pending { background: #e67e22; }
+  .eq { margin: 18px 0; text-align: left; }
+  table { border-collapse: collapse; margin: 14px 0; }
+  td, th { border: 1px solid #999; padding: 6px 18px; text-align: center; }
+  th { background: #f0f4ff; }
+  pre { background: #f6f8fa; border: 1px solid #ddd; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  .note { background: #fff8e6; border: 1px solid #f0d78a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+  footer { margin-top: 44px; color: #aaa; font-size: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+  mjx-container { font-size: 1.08em; }
+</style>
+</head>
+<body>
+<h1>三机并行车间调度（makespan）· 优化方案过程报告</h1>
+<div class="subtitle">问题类型: $P_3 \mid \text{chains} \mid C_{\max}$ ｜ 复杂度: NP-难 ｜ 求解器: OR-Tools CP-SAT 9.x</div>
+<div class="meta">OR-Expert ｜ 任务: 7 工件 / 21 道工序 / 3 台同速机 ｜ 生成时间: 2026-08-14 11:13</div>
+<div class="stage-badge ok">阶段二：完整报告（已完成）</div>
+<h2>一、问题描述</h2>
+<p>车间有 3 台性能完全相同的加工机器，需加工 7 个工件。每个工件含 2~5 道工序，必须严格按工艺顺序依次加工（前道全部完工后，后道才能开始）；每道工序可选任意一台机器加工，时长不受机器影响；同一机器同一时间只能加工一道工序，工序不可中断。目标：<b>最小化最大完工时间（makespan $C_{\max}$）</b>，无权重。</p>
+<table><tr><th>工件</th><th>工序数</th><th>各工序加工时间（小时）</th><th>总加工时间</th></tr><tr><td>J1</td><td>3</td><td>2, 1, 2</td><td>5.0</td></tr><tr><td>J2</td><td>2</td><td>1, 1</td><td>2.0</td></tr><tr><td>J3</td><td>4</td><td>1, 0.5, 0.5, 1</td><td>3.0</td></tr><tr><td>J4</td><td>2</td><td>0.5, 0.5</td><td>1.0</td></tr><tr><td>J5</td><td>5</td><td>1, 0.5, 0.3, 1.5, 0.5</td><td>3.8</td></tr><tr><td>J6</td><td>1</td><td>0.5</td><td>0.5</td></tr><tr><td>J7</td><td>4</td><td>0.2, 0.3, 0.5, 0.2</td><td>1.2</td></tr><tr><td>合计</td><td>21</td><td>—</td><td>16.5</td></tr></table>
+<div class="note">⚠ 下界估计（求解前）: $C_{\max} \ge \max(16.5/3,\ 最长工件链) = \max(5.5,\ 5.0\ \text{(J1)}) = 5.5$ 小时——求解后验证最优性。</div>
+<h2>二、数学模型</h2>
+<h3>集合 Sets</h3>
+<div class="eq">$$ \mathcal{J} = \{1, \ldots, 7\} \quad \text{工件}, \qquad \mathcal{M} = \{1, 2, 3\} \quad \text{机器}, \qquad \mathcal{O}_j = \{1, \ldots, n_j\} \quad \text{工件 } j \text{ 的工序序列}  $$</div>
+<h3>参数 Parameters</h3>
+<div class="eq">$$ p_{jk} \in \mathbb{Z}_{+}: \text{工序 } (j,k) \text{ 的加工时间（小时 } \times 10 \text{，整数化）}  $$</div>
+<h3>决策变量 Decision Variables</h3>
+<div class="eq">$$ S_{jk} \ge 0: \text{工序 } (j,k) \text{ 开工时间}, \qquad E_{jk} = S_{jk} + p_{jk}: \text{完工时间}  $$</div>
+<div class="eq">$$ y_{jkm} \in \{0, 1\}: \text{工序 } (j,k) \text{ 是否分配在机器 } m, \qquad C_{\max} \ge 0: \text{makespan}  $$</div>
+<h3>目标函数 Objective</h3>
+<div class="eq">$$ \min \, C_{\max} \tag{(1)} $$</div>
+<h3>约束条件 Constraints</h3>
+<div class="eq">$$ S_{j,k+1} \ge E_{jk}, \quad \forall j \in \mathcal{J},\ k = 1, \ldots, n_j - 1 \qquad \text{工序链：前道完工后道才开工} \tag{(2)} $$</div>
+<div class="eq">$$ \sum_{m \in \mathcal{M}} y_{jkm} = 1, \quad \forall (j,k) \qquad \text{每道工序恰选一台机器} \tag{(3)} $$</div>
+<div class="eq">$$ \text{每台机器 } m \text{ 上所有工序区间 } [S_{jk},\, E_{jk}) \text{ 两两不重叠（NoOverlap）} \tag{(4)} $$</div>
+<div class="eq">$$ C_{\max} \ge E_{j,n_j}, \quad \forall j \in \mathcal{J} \qquad \text{每工件最后一道工序不晚于 makespan} \tag{(5)} $$</div>
+<div class="eq">$$ S_{jk} \ge 0, \quad C_{\max} \ge 0 \qquad \text{变量域} \tag{(6)} $$</div>
+<h2>三、数值声明与复杂度</h2>
+<p><b>时间单位</b>: 小时 $\times 10$ 转整数（0.2h → 2 单位），CP-SAT 整数域精确求解。</p>
+<p><b>Big-M</b>: interval 模型无 Big-$M$（NoOverlap 原生表达）；MIP 备选方案取 $M = 165$（总加工 16.5h $\times 10$）。</p>
+<p><b>对称性</b>: 3 台机器完全相同，可选对称性破坏约束，小规模非必需。</p>
+<p><b>复杂度</b>: NP-难 ｜ 求解器: OR-Tools CP-SAT 9.x ｜ 规模: 21 工序 $\times$ 3 机器。</p>
+<h2>四、求解结果</h2>
+<p><b>最优 makespan = 5.5 小时</b>（CP-SAT OPTIMAL，零 gap）——恰好等于理论下界 $\max(16.5/3,\ 5.0) = 5.5$，<b>最优性被下界直接证明</b>。三台机器从 0 到 5.5h 全程满载、无任何空闲。</p>
+<table><tr><th>机器</th><th>工序数</th><th>负载（小时）</th><th>利用率（makespan 内）</th></tr><tr><td>M1</td><td>8</td><td>5.5</td><td>100%</td></tr><tr><td>M2</td><td>6</td><td>5.5</td><td>100%</td></tr><tr><td>M3</td><td>7</td><td>5.5</td><td>100%</td></tr></table>
+<figure style="text-align:center; margin:18px 0;"><img src="parallel_machines_gantt.png" style="max-width:100%; border:1px solid #eee; border-radius:6px;"><figcaption style="color:#666; font-size:13px; margin-top:6px;">图 1: 最优调度甘特图（三机满载，makespan = 5.5h）</figcaption></figure>
+<p><b>结果解读</b>: 总加工量 16.5h 恰好被 3 台机器均分（各 5.5h）——本实例的 makespan 下界由「总负载 / 机器数」主导（5.5h > 最长链 5.0h），调度达到容量极限。J5 的 1.5h 长工序（J5-4）与 J1 的 5h 长链是关键路径元素，被精确交错排布。</p>
+<h2>五、求解代码（逐行注释公式编号）</h2>
+<p>完整可运行脚本（CP-SAT interval + NoOverlap + precedence），代码行注释对应公式编号 (1)-(6):</p>
+<pre><code class="language-python">&quot;&quot;&quot;
+三机并行车间调度（makespan 最小化）— P_3 | chains | C_max
+OR-Expert 交付: 公式编号 (1)-(6) 与模型一一对应
+- (1) 目标 min C_max  (2) 工序链  (3) 机器分配  (4) NoOverlap  (5) makespan  (6) 变量域
+时间单位: 小时 ×10 整数
+&quot;&quot;&quot;
+import matplotlib
+matplotlib.use(&quot;Agg&quot;)
+import matplotlib.font_manager as fm
+import matplotlib.pyplot as plt
+from ortools.sat.python import cp_model
+
+# ---------- 数据（小时 ×10 整数化） ----------
+JOBS = {  # 工件: [各工序加工时间 ×10]
+    1: [20, 10, 20],
+    2: [10, 10],
+    3: [10, 5, 5, 10],
+    4: [5, 5],
+    5: [10, 5, 3, 15, 5],
+    6: [5],
+    7: [2, 3, 5, 2],
+}
+N_MACHINES = 3
+HORIZON = sum(sum(ops) for ops in JOBS.values())  # 165: 总加工量上界
+
+# ---------- 模型 ----------
+m = cp_model.CpModel()
+presence = {}    # presence[(j,k,m)]: 工序 (j,k) 是否在机器 m
+intervals = {}   # intervals[(j,k,m)]: 可选区间
+start_of = {}    # start_of[(j,k)]: 工序 (j,k) 开工时间（跨机器共享）
+end_of = {}      # end_of[(j,k)]
+
+for j, ops in JOBS.items():
+    for k in range(len(ops)):
+        s = m.NewIntVar(0, HORIZON, f&quot;S_{j}_{k}&quot;)                      # (6) S_jk ≥ 0
+        e = m.NewIntVar(0, HORIZON, f&quot;E_{j}_{k}&quot;)                      # E_jk = S_jk + p_jk
+        m.Add(e == s + ops[k])
+        start_of[(j, k)], end_of[(j, k)] = s, e
+        for mm in range(N_MACHINES):
+            p_lit = m.NewBoolVar(f&quot;y_{j}_{k}_{mm}&quot;)                    # (3) y_jkm
+            presence[(j, k, mm)] = p_lit
+            intervals[(j, k, mm)] = m.NewOptionalIntervalVar(
+                s, ops[k], e, p_lit, f&quot;int_{j}_{k}_{mm}&quot;)              # (4) 机器区间
+        m.AddExactlyOne([presence[(j, k, mm)] for mm in range(N_MACHINES)])  # (3) Σ y_jkm = 1
+
+# (4) 每台机器 NoOverlap: 同机区间两两不重叠
+for mm in range(N_MACHINES):
+    m.AddNoOverlap([intervals[(j, k, mm)] for j in JOBS for k in range(len(JOBS[j]))])
+
+# (2) 工序链: S_j,k+1 ≥ E_j,k
+for j, ops in JOBS.items():
+    for k in range(len(ops) - 1):
+        m.Add(start_of[(j, k + 1)] &gt;= end_of[(j, k)])
+
+# (1)(5) makespan: min C_max,  C_max ≥ E_j,n_j
+Cmax = m.NewIntVar(0, HORIZON, &quot;Cmax&quot;)
+for j, ops in JOBS.items():
+    m.Add(Cmax &gt;= end_of[(j, len(ops) - 1)])
+m.Minimize(Cmax)
+
+# ---------- 求解 ----------
+solver = cp_model.CpSolver()
+solver.parameters.max_time_in_seconds = 30.0
+status = solver.Solve(m)
+assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE), f&quot;status={status}&quot;
+print(f&quot;[CP-SAT] status={&#x27;OPTIMAL&#x27; if status == cp_model.OPTIMAL else &#x27;FEASIBLE&#x27;}&quot;)
+print(f&quot;[结果] 最优 makespan C_max = {solver.Value(Cmax)} (×10 分钟) = {solver.Value(Cmax)/10} 小时&quot;)
+
+# ---------- 结果明细 ----------
+machine_ops = {mm: [] for mm in range(N_MACHINES)}
+total_load = 0
+for j, ops in JOBS.items():
+    for k in range(len(ops)):
+        mm = next(x for x in range(N_MACHINES) if solver.Value(presence[(j, k, x)]) == 1)
+        s, e = solver.Value(start_of[(j, k)]), solver.Value(end_of[(j, k)])
+        machine_ops[mm].append((j, k, s, e))
+        total_load += ops[k]
+        print(f&quot;  J{j} 工序{k+1}: 机器M{mm+1}  开工={s/10}h  完工={e/10}h  (时长{ops[k]/10}h)&quot;)
+
+print(&quot;\n[机器负载]&quot;)
+for mm in range(N_MACHINES):
+    load = sum(e - s for _, _, s, e in machine_ops[mm])
+    print(f&quot;  M{mm+1}: {len(machine_ops[mm])} 道工序, 负载 {load/10}h ({load/total_load*100:.0f}%)&quot;)
+
+# ---------- 甘特图 ----------
+for f in [&quot;/System/Library/Fonts/STHeiti Medium.ttc&quot;, &quot;/System/Library/Fonts/Hiragino Sans GB.ttc&quot;]:
+    try:
+        fm.fontManager.addfont(f)
+    except Exception:
+        pass
+plt.rcParams[&quot;font.family&quot;] = [&quot;STHeiti&quot;, &quot;Hiragino Sans GB&quot;, &quot;sans-serif&quot;]
+colors = plt.cm.tab10.colors
+fig, ax = plt.subplots(figsize=(12, 4.2), dpi=200)
+for mm in range(N_MACHINES):
+    for j, k, s, e in machine_ops[mm]:
+        ax.barh(N_MACHINES - mm, (e - s) / 10, left=s / 10, height=0.6,
+                color=colors[j % 10], edgecolor=&quot;white&quot;)
+        ax.text((s + e) / 20, N_MACHINES - mm, f&quot;J{j}-{k+1}&quot;, ha=&quot;center&quot;, va=&quot;center&quot;,
+                fontsize=8, color=&quot;white&quot;, fontweight=&quot;bold&quot;)
+ax.set_yticks([3, 2, 1])
+ax.set_yticklabels([&quot;M1&quot;, &quot;M2&quot;, &quot;M3&quot;])
+ax.set_xlabel(&quot;时间（小时）&quot;)
+ax.set_title(f&quot;最优调度甘特图（makespan = {solver.Value(Cmax)/10} 小时）&quot;, fontsize=13)
+ax.set_xlim(0, solver.Value(Cmax) / 10 + 0.5)
+ax.grid(axis=&quot;x&quot;, alpha=0.3)
+fig.tight_layout()
+fig.savefig(&quot;docs/parallel_machines_gantt.png&quot;, dpi=200, facecolor=&quot;white&quot;)
+plt.close(fig)
+print(&quot;\n甘特图已生成: docs/parallel_machines_gantt.png&quot;)
+</code></pre>
+<h2>六、业务解读</h2>
+<p><b>1. 解的物理含义</b>: 三台机器 0→5.5h 连续满负荷；J1（链长 5h）跨 M3→M3→M2，J5 长工序 J5-4（1.5h）独占 M1 中段；所有 21 道工序在 5.5h 内完成。</p>
+<p><b>2. 瓶颈与杠杆点</b>: 本例瓶颈是<b>总产能</b>（16.5h / 3 机 = 5.5h），而非某台机器——三机均衡满载；真正约束是总加工量与机器数之比。若需进一步压缩 makespan，唯一杠杆是<b>增加机器或缩短总加工量</b>。</p>
+<p><b>3. 敏感性分析</b>: 机器数 3→2 时下界升至 8.25h（产能紧张）；3→4 时下界降至 4.125h，但受 J1 最长链 5.0h 约束，实际 makespan 无法低于 5h——<b>机器边际收益递减</b>。J1 链缩短 1h 不影响本解（容量下界主导）；总加工量 ±1h 则 makespan 下界 ±0.33h。</p>
+<p><b>4. 行动建议</b>: 当前 3 台机器在既有订单下已达容量极限——新订单将直接推高 makespan；扩产前先评估「4 台机器 vs 加班」的成本（4 台仅能压到 5h，受最长链限制，收益有限）。调度可复用本模型滚动重排（订单变更时重跑，秒级出解）。</p>
+<h2>七、六维核对清单</h2>
+<table><tr><th>维度</th><th>检查项</th><th>结论</th></tr><tr><td>数据层</td><td>7 工件 21 工序参数完整；时长 ×10 整数化口径一致</td><td>✓ 通过</td></tr><tr><td>建模正确性</td><td>目标=最小化 makespan；工序链/不可中断/单机规则 → 约束 (2)(4)</td><td>✓ 通过</td></tr><tr><td>数学合理性</td><td>无冗余/矛盾约束；可行域非空；下界 5.5h 达到 → 最优性证明</td><td>✓ 通过</td></tr><tr><td>公式-代码一致性</td><td>代码逐行标注公式编号 (1)-(6)，与模型一致</td><td>✓ 通过</td></tr><tr><td>求解适配性</td><td>NP-难→CP-SAT 精确求解，status=OPTIMAL 零 gap；下界验证一致</td><td>✓ 通过</td></tr><tr><td>边界鲁棒性</td><td>含单工序工件 J6、0.2h 细粒度工序、链长差异 0.5~5h 的边界覆盖</td><td>✓ 通过</td></tr></table>
+<div class="note">⚠ 测试边界声明: 本案例为 L1~L2 级（小规模 + 边界覆盖）；L4 大规模（数百工序）性能测试留待生产规模任务；最优性由「下界=解值」证明，非穷举。</div>
+<footer>OR-Expert 过程报告 ｜ 公式为 LaTeX 源码内嵌，可直接编辑后刷新浏览器重新渲染</footer>
+</body>
+</html>

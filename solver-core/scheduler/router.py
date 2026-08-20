@@ -17,15 +17,20 @@ from . import heuristics
 
 def solve(data: DataModel, lambda_: tuple = (0.0, 1.0, 0.0),
           time_budget: float | None = None, seed: int = 42,
-          verbose: bool = True) -> dict:
-    """统一求解入口，按规模自动路由。"""
+          verbose: bool = True, progress_cb=None, cancel=None) -> dict:
+    """统一求解入口，按规模自动路由。
+
+    progress_cb(percent, stage)：进度回调（可选，透传子求解器）。
+    cancel() -> bool：取消检查（可选，透传子求解器）。
+    """
     n = data.n
     t0 = time.time()
 
     if n <= 20:
         if verbose:
             print(f"[路由] n={n} → CP-SAT 精确求解")
-        result = cp_sat.solve(data, lambda_, time_limit=None, verbose=verbose)
+        result = cp_sat.solve(data, lambda_, time_limit=None, verbose=verbose,
+                              progress_cb=progress_cb, cancel=cancel)
         result["solver"] = "CP-SAT"
         result["total_time_s"] = time.time() - t0
         return result
@@ -33,13 +38,13 @@ def solve(data: DataModel, lambda_: tuple = (0.0, 1.0, 0.0),
     budget = time_budget if time_budget else (300.0 if n <= 80 else 900.0)
     if verbose:
         print(f"[路由] n={n} → 构造启发式 + ALNS ({budget:.0f}s)")
-    result = _metaheuristic(data, lambda_, budget, seed, verbose)
+    result = _metaheuristic(data, lambda_, budget, seed, verbose, progress_cb, cancel)
     result["total_time_s"] = time.time() - t0
     return result
 
 
 def _metaheuristic(data: DataModel, lambda_: tuple, budget: float,
-                   seed: int, verbose: bool) -> dict:
+                   seed: int, verbose: bool, progress_cb=None, cancel=None) -> dict:
     s0_best = None
     for s_seed in range(3):
         s0 = heuristics.constructive(data, lambda_, seed=seed + s_seed)
@@ -58,7 +63,8 @@ def _metaheuristic(data: DataModel, lambda_: tuple, budget: float,
         }
 
     s_best = heuristics.alns(data, s0_best, lambda_, time_limit=budget,
-                             seed=seed, verbose=verbose)
+                             seed=seed, verbose=verbose,
+                             progress_cb=progress_cb, cancel=cancel)
     return {
         "status": "FEASIBLE",
         "schedule": s_best,

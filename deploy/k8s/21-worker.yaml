@@ -1,0 +1,36 @@
+# Worker：CPU 密集求解，进程级隔离（RQ fork），按队列扩展副本数
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: or-scheduling
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: or-scheduling-worker:latest  # 替换为实际镜像仓库地址
+          command: ["python", "/app/worker/run_worker.py", "worker", "quick", "alns300", "alns900"]
+          envFrom:
+            - configMapRef:
+                name: or-scheduling-config
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: or-scheduling-secret
+                  key: JWT_SECRET
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: "4"
+              memory: 4Gi

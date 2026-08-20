@@ -14,14 +14,19 @@ venv/
 # Node（前端 M3）
 node_modules/
 frontend/dist/
+*.tsbuildinfo
 
 # 环境与密钥
 .env
 .env.local
+deploy/certs/
 
 # IDE
 .idea/
 .vscode/
+
+# git 元数据残留
+.worktrees/
 
 # 求解产物（临时）
 docs/results/*.json

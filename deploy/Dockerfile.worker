@@ -1,0 +1,37 @@
+# OR-Scheduling-SaaS Worker 镜像（RQ 异步求解）
+# build context = 项目根（见 docker-compose.yml: context: ..）
+FROM python:3.14-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+
+# CP-SAT 依赖 OpenMP 运行时
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# solver-core（提供 scheduler 包）
+COPY solver-core /app/solver-core
+RUN pip install /app/solver-core
+
+# backend（提供 app 包 + 依赖）
+COPY backend /app/backend
+RUN pip install -r /app/backend/requirements.txt
+
+# worker（RQ job 定义）
+COPY worker /app/worker
+
+# 非 root 运行（chown：macOS 源码 600 权限）
+RUN useradd -m appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+WORKDIR /app
+
+# 用 run_worker.py wrapper 启动（显式 sys.path，规避 RQ --path fork 模式不可靠问题）
+CMD ["python", "/app/worker/run_worker.py", "worker", "quick", "alns300", "alns900"]

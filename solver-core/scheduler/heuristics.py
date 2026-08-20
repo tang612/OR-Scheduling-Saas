@@ -152,7 +152,7 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
          seed: int = 42, verbose: bool = True, w_bal: float = 0.0,
          w_flex: float = 0.0, obj_scale: float | None = None,
          imp_patience: int | None = None, imp_threshold: float = 1e-4,
-         return_history: bool = False):
+         return_history: bool = False, progress_cb=None, cancel=None):
     """自适应大邻域搜索 + 模拟退火。
 
     扩展（方案 V3）：多指标引导目标（w_bal/w_flex）+ 相对改进率终止
@@ -191,9 +191,17 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
     checkpoint_fbest = f_best          # 相对改进率检查点
     checkpoint_iter = 0
 
+    last_pct = -1
     while time.time() - t0 < time_limit:
+        if cancel is not None and cancel():
+            break
         iteration += 1
         frac = 1 - (time.time() - t0) / time_limit
+        if progress_cb is not None:
+            pct = int((1.0 - frac) * 100)
+            if pct > last_pct:
+                last_pct = pct
+                progress_cb(1.0 - frac, "ALNS迭代")
         k = max(1, int(n * (0.04 + 0.20 * frac)))
         if k >= n:
             k = max(1, n - 1)

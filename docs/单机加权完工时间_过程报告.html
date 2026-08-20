@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>单机加权完工时间最小化 · 优化方案过程报告</title>
+<script>
+  MathJax = {
+    tex: {
+      tags: 'none',
+      inlineMath: [['$', '$'], ['\(', '\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 900px; margin: 0 auto; padding: 36px 28px; color: #1a1a2e; line-height: 1.8; }
+  h1 { font-size: 24px; border-bottom: 3px solid #4a6cf7; padding-bottom: 12px; }
+  h2 { font-size: 19px; color: #4a6cf7; margin-top: 34px; border-left: 4px solid #4a6cf7; padding-left: 10px; }
+  h3 { font-size: 16px; margin-top: 24px; color: #333; }
+  .subtitle { color: #666; font-size: 14px; margin-top: -8px; }
+  .meta { color: #888; font-size: 12px; margin-top: 6px; }
+  .stage-badge { display: inline-block; background: #4a6cf7; color: #fff; border-radius: 4px; padding: 2px 10px; font-size: 12px; margin-top: 12px; }
+  .stage-badge.pending { background: #e67e22; }
+  .eq { margin: 18px 0; text-align: left; }
+  table { border-collapse: collapse; margin: 14px 0; }
+  td, th { border: 1px solid #999; padding: 6px 18px; text-align: center; }
+  th { background: #f0f4ff; }
+  pre { background: #f6f8fa; border: 1px solid #ddd; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  .note { background: #fff8e6; border: 1px solid #f0d78a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+  footer { margin-top: 44px; color: #aaa; font-size: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+  mjx-container { font-size: 1.08em; }
+</style>
+</head>
+<body>
+<h1>单机加权完工时间最小化 · 优化方案过程报告</h1>
+<div class="subtitle">问题类型: $1 \| \cdot \| \sum w_j C_j$ ｜ 复杂度: P 类（WSPT 可解析求解）</div>
+<div class="meta">OR-Expert ｜ 任务: 3 作业单机排序 ｜ 求解器: OR-Tools CP-SAT 9.x ｜ 生成时间: 2026-08-14 10:43</div>
+<div class="stage-badge ok">阶段二：完整报告（已完成）</div>
+<h2>一、问题描述</h2>
+<p>一台加工机器需处理 3 个生产作业。每个作业一旦开始加工就不能中断，同一时间机器只能处理一个作业。目标：安排作业加工顺序，使所有作业的<b>加权完工时间总和最小</b>。</p>
+<table><tr><th>作业 $j$</th><th>加工时间 $p_j$（小时）</th><th>权重 $w_j$</th></tr><tr><td>1</td><td>2</td><td>3</td></tr><tr><td>2</td><td>3</td><td>1</td></tr><tr><td>3</td><td>1</td><td>2</td></tr></table>
+<h2>二、数学模型</h2>
+<h3>集合 Sets</h3>
+<div class="eq">$$ \mathcal{J} = \{1, 2, 3\} \quad \text{作业集合}, \qquad \mathcal{K} = \{1, 2, 3\} \quad \text{加工位置集合}  $$</div>
+<h3>参数 Parameters</h3>
+<div class="eq">$$ p_j \in \mathbb{Z}_{+}: \text{作业 } j \text{ 的加工时间（小时）}, \qquad w_j \in \mathbb{Z}_{+}: \text{作业 } j \text{ 的权重（优先级）}  $$</div>
+<h3>决策变量 Decision Variables</h3>
+<div class="eq">$$ x_{jk} \in \{0, 1\}, \quad \forall j \in \mathcal{J},\ k \in \mathcal{K} \qquad \text{（} x_{jk} = 1 \text{ 当且仅当作业 } j \text{ 排在第 } k \text{ 位）}  $$</div>
+<h3>目标函数 Objective</h3>
+<div class="eq">$$ \min \sum_{k \in \mathcal{K}} C_k \sum_{j \in \mathcal{J}} w_j \, x_{jk} \tag{(1)} $$</div>
+<h3>约束条件 Constraints</h3>
+<div class="eq">$$ \sum_{k \in \mathcal{K}} x_{jk} = 1, \quad \forall j \in \mathcal{J} \qquad \text{每个作业恰好占据一个位置} \tag{(2)} $$</div>
+<div class="eq">$$ \sum_{j \in \mathcal{J}} x_{jk} = 1, \quad \forall k \in \mathcal{K} \qquad \text{每个位置恰好安排一个作业} \tag{(3)} $$</div>
+<div class="eq">$$ C_k = \sum_{l=1}^{k} \sum_{j \in \mathcal{J}} p_j \, x_{jl}, \quad \forall k \in \mathcal{K} \qquad \text{第 } k \text{ 位完工时间 = 前 } k \text{ 个作业加工时间累计} \tag{(4)} $$</div>
+<h3>乘积线性化（CP-SAT 实现辅助变量）</h3>
+<div class="eq">$$ W_k = \sum_{j \in \mathcal{J}} w_j \, x_{jk}, \quad \forall k \in \mathcal{K} \tag{(5)} $$</div>
+<div class="eq">$$ Z_k = C_k \cdot W_k, \quad \forall k \in \mathcal{K} \tag{(6)} $$</div>
+<p>目标 (1) 等价于 $\min \sum_{k \in \mathcal{K}} Z_k$——CP-SAT 不支持两个变量直接相乘，用乘法等式约束 (6) 建模（7 大类线性化技巧之一）。</p>
+<h2>三、数值声明与复杂度</h2>
+<p>无 Big-$M$ 约束（位置模型天然线性）；参数均为整数小时、量纲一致、无需缩放；CP-SAT 整数域精确求解。</p>
+<p>复杂度: $\mathcal{P}$ 类——WSPT / Smith 规则（按 $p_j / w_j$ 升序加工）即最优，用于交叉验证。</p>
+<h2>四、求解结果</h2>
+<p>最优加工顺序: <b>J3 → J1 → J2</b>，最小加权完工时间总和 $\sum w_j C_j = \mathbf{17}$（CP-SAT 精确最优，与 WSPT 解析解、全排列穷举<b>三重交叉验证一致</b>）。</p>
+<table><tr><th>作业</th><th>加工时间 $p_j$</th><th>权重 $w_j$</th><th>完工时间 $C_j$</th><th>加权贡献 $w_j \cdot C_j$</th></tr><tr><td>J3</td><td>1</td><td>2</td><td>1</td><td>2</td></tr><tr><td>J1</td><td>2</td><td>3</td><td>3</td><td>9</td></tr><tr><td>J2</td><td>3</td><td>1</td><td>6</td><td>6</td></tr><tr><td>合计</td><td>6</td><td>—</td><td>—</td><td>&lt;b&gt;17&lt;/b&gt;</td></tr></table>
+<figure style="text-align:center; margin:18px 0;"><img src="wct_gantt.png" style="max-width:100%; border:1px solid #eee; border-radius:6px;"><figcaption style="color:#666; font-size:13px; margin-top:6px;">图 1: 最优加工顺序甘特图（J3→J1→J2，完工时间标注）</figcaption></figure>
+<figure style="text-align:center; margin:18px 0;"><img src="wct_compare.png" style="max-width:100%; border:1px solid #eee; border-radius:6px;"><figcaption style="color:#666; font-size:13px; margin-top:6px;">图 2: 6 种排列加权完工时间对比（最优 17）</figcaption></figure>
+<p><b>结果解读</b>: 最短且权重高的 J3（1h, w=2）最先加工，最长且权重最低的 J2（3h, w=1）最后加工——WSPT 规则的经济学直觉: 让「高优先级短作业」尽早完成，避免积压放大加权成本。次优方案 J1→J3→J2 目标 18（差 5.9%），最差方案 J2→J1→J3 目标 30。</p>
+<h2>五、求解代码（逐行注释公式编号）</h2>
+<p>完整可运行脚本（CP-SAT 求解 + WSPT / 穷举交叉验证），代码行注释对应公式编号 (1)-(6):</p>
+<pre><code class="language-python">&quot;&quot;&quot;
+1||Σw_jC_j 单机加权完工时间最小化 — OR-Expert 四件套交付
+公式编号映射: (1)目标  (2)(3)指派约束  (4)完工时间递推
+验证: WSPT 解析解 + 全排列穷举 (L1 玩具用例, 3!=6 手工可算)
+&quot;&quot;&quot;
+from itertools import permutations
+from ortools.sat.python import cp_model
+
+# ---------- 数据 ----------
+JOBS = {1: {&quot;p&quot;: 2, &quot;w&quot;: 3}, 2: {&quot;p&quot;: 3, &quot;w&quot;: 1}, 3: {&quot;p&quot;: 1, &quot;w&quot;: 2}}
+J = list(JOBS)          # 作业集合 J
+K = list(range(1, len(J) + 1))  # 位置集合 K
+p = {j: JOBS[j][&quot;p&quot;] for j in J}
+w = {j: JOBS[j][&quot;w&quot;] for j in J}
+
+# ---------- CP-SAT 模型 ----------
+m = cp_model.CpModel()
+
+# 决策变量 x[j][k] ∈ {0,1}: 作业 j 排在第 k 位
+x = {j: {k: m.NewBoolVar(f&quot;x_{j}_{k}&quot;) for k in K} for j in J}          # (1)-(4) 共用
+
+for j in J:
+    m.Add(sum(x[j][k] for k in K) == 1)                                  # (2) 每作业恰一位
+for k in K:
+    m.Add(sum(x[j][k] for j in J) == 1)                                  # (3) 每位置恰一作业
+
+C = {k: m.NewIntVar(0, sum(p.values()), f&quot;C_{k}&quot;) for k in K}            # (4) 位置 k 完工时间
+for k in K:
+    m.Add(C[k] == sum(p[j] * x[j][l] for l in range(1, k + 1) for j in J))  # (4) 累计加工时间
+
+W = {k: m.NewIntVar(0, max(w.values()), f&quot;W_{k}&quot;) for k in K}            # (5) 位置 k 的作业权重
+for k in K:
+    m.Add(W[k] == sum(w[j] * x[j][k] for j in J))                        # (5) W_k = Σ w_j·x_jk
+Z = {k: m.NewIntVar(0, sum(p.values()) * max(w.values()), f&quot;Z_{k}&quot;) for k in K}  # (6) 乘积辅助
+for k in K:
+    m.AddMultiplicationEquality(Z[k], C[k], W[k])                        # (6) Z_k = C_k · W_k
+m.Minimize(sum(Z.values()))                                              # (1&#x27;) 目标: min Σ Z_k
+
+# ---------- 求解 ----------
+solver = cp_model.CpSolver()
+solver.parameters.max_time_in_seconds = 10.0
+status = solver.Solve(m)
+assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE), f&quot;solve failed: {status}&quot;
+
+order = [j for k in K for j in J if solver.Value(x[j][k]) == 1]          # 最优顺序
+obj = solver.ObjectiveValue()
+print(f&quot;[CP-SAT] 最优顺序: {&#x27; → &#x27;.join(f&#x27;J{j}&#x27; for j in order)}  目标值: {obj}&quot;)
+
+# ---------- 交叉验证 1: WSPT 解析解 (p/w 升序) ----------
+wspt = sorted(J, key=lambda j: p[j] / w[j])
+t = 0
+wspt_val = 0
+for j in wspt:
+    t += p[j]
+    wspt_val += w[j] * t
+print(f&quot;[WSPT ] 解析顺序: {&#x27; → &#x27;.join(f&#x27;J{j}&#x27; for j in wspt)}  目标值: {wspt_val}&quot;)
+assert order == wspt, &quot;CP-SAT 解与 WSPT 不一致!&quot;
+assert abs(obj - wspt_val) &lt; 1e-6, &quot;目标值不一致!&quot;
+
+# ---------- 交叉验证 2: 全排列穷举 (L1 玩具用例) ----------
+best_val, best_seq = float(&quot;inf&quot;), None
+for perm in permutations(J):
+    t, val = 0, 0
+    for j in perm:
+        t += p[j]
+        val += w[j] * t
+    if val &lt; best_val:
+        best_val, best_seq = val, perm
+print(f&quot;[穷举 ] 最优顺序: {&#x27; → &#x27;.join(f&#x27;J{j}&#x27; for j in best_seq)}  目标值: {best_val}&quot;)
+assert best_val == obj, &quot;穷举与 CP-SAT 不一致!&quot;
+
+# ---------- 输出每个作业完工时间 ----------
+t = 0
+for j in order:
+    t += p[j]
+    print(f&quot;  作业 J{j}: 完工时间 C_j = {t} 小时 (加权贡献 {w[j]}×{t} = {w[j]*t})&quot;)
+
+print(f&quot;\n[L1 测试] 三项交叉验证全部通过 ✅  Σw_jC_j = {int(obj)}&quot;)
+</code></pre>
+<h2>六、业务解读</h2>
+<p><b>1. 解的物理含义</b>: 先做 J3（1 小时、权重 2），再做 J1（2 小时、权重 3），最后做 J2（3 小时、权重 1）。总加权完工时间 17 小时。</p>
+<p><b>2. 瓶颈与杠杆点</b>: 单机即唯一瓶颈（资源利用率 100%）；权重是决策杠杆——J1 权重最高（3）且耗时适中，其位置靠前贡献 9；J2 权重最低且耗时最长，被放到最后。</p>
+<p><b>3. 敏感性分析</b>: 顺序由比值 $p_j / w_j$ 决定。若 J2 权重从 1 增至 $> 4.5$，J2 将提前到 J1 之前（$> 6$ 则排到最前）；若 J1 加工时间增至 $> 9$ 小时，J1 将排到 J2 之后。</p>
+<p><b>4. 行动建议</b>: 生产中遵循「高权重短作业优先」；权重/加工时间波动时直接用 WSPT 规则 $O(n \log n)$ 重排，无需重新建模求解。</p>
+<h2>七、六维核对清单</h2>
+<table><tr><th>维度</th><th>检查项</th><th>结论</th></tr><tr><td>数据层</td><td>参数完整、口径一致（p: 小时, w: 权重）</td><td>✓ 通过</td></tr><tr><td>建模正确性</td><td>目标=最小化加权完工时间；不可中断/单机规则由位置模型表达</td><td>✓ 通过</td></tr><tr><td>数学合理性</td><td>无冗余/矛盾约束；量纲一致；可行域非空（6 个排列）</td><td>✓ 通过</td></tr><tr><td>公式-代码一致性</td><td>代码逐行标注公式编号 (1)-(6)，与模型一致</td><td>✓ 通过</td></tr><tr><td>求解适配性</td><td>P 类→CP-SAT 精确求解、零 gap；WSPT+穷举交叉验证一致</td><td>✓ 通过</td></tr><tr><td>边界鲁棒性</td><td>n=3 全排列穷举完备；WSPT 对任意规模 O(n log n) 成立</td><td>✓ 通过</td></tr></table>
+<div class="note">⚠ 测试边界声明: 本案例为 L1 玩具用例（穷举可完备验证最优性）；L2 边界（单作业/零权重）、L3 异常（空输入）、L4 大规模性能测试留待生产规模任务补充。</div>
+<footer>OR-Expert 过程报告 ｜ 公式为 LaTeX 源码内嵌，可直接编辑后刷新浏览器重新渲染</footer>
+</body>
+</html>

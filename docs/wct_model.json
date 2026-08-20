@@ -1,0 +1,50 @@
+{
+  "title": "单机加权完工时间最小化 · 数学模型",
+  "subtitle": "问题类型: 1 ‖ Σ w_j C_j（P 类，WSPT 可解析求解）",
+  "sections": [
+    {
+      "heading": "【集合】",
+      "lines": [
+        "$\\mathcal{J} = \\{1, 2, 3\\}$  作业集合；   $\\mathcal{K} = \\{1, 2, 3\\}$  加工位置集合"
+      ]
+    },
+    {
+      "heading": "【参数】",
+      "lines": [
+        "$p_j \\in \\mathbb{Z}_{+}$  作业 $j$ 加工时间(小时):  $p_1 = 2,\\ p_2 = 3,\\ p_3 = 1$",
+        "$w_j \\in \\mathbb{Z}_{+}$  作业 $j$ 权重:  $w_1 = 3,\\ w_2 = 1,\\ w_3 = 2$"
+      ]
+    },
+    {
+      "heading": "【决策变量】",
+      "lines": [
+        "$x_{jk} \\in \\{0, 1\\}, \\quad \\forall j \\in \\mathcal{J},\\ k \\in \\mathcal{K}$",
+        "$x_{jk} = 1$ 当且仅当作业 $j$ 排在第 $k$ 个位置"
+      ]
+    },
+    {
+      "heading": "【目标函数】",
+      "lines": [
+        "(1)  $\\min \\ \\sum_{k \\in \\mathcal{K}} C_k \\sum_{j \\in \\mathcal{J}} w_j \\, x_{jk}$"
+      ]
+    },
+    {
+      "heading": "【约束条件】",
+      "lines": [
+        "(2)  $\\sum_{k \\in \\mathcal{K}} x_{jk} = 1, \\quad \\forall j \\in \\mathcal{J}$      每个作业恰好占据一个位置",
+        "(3)  $\\sum_{j \\in \\mathcal{J}} x_{jk} = 1, \\quad \\forall k \\in \\mathcal{K}$      每个位置恰好安排一个作业",
+        "(4)  $C_k = \\sum_{l=1}^{k} \\sum_{j \\in \\mathcal{J}} p_j \\, x_{jl}, \\quad \\forall k \\in \\mathcal{K}$",
+        "     第 $k$ 位完工时间 = 前 $k$ 个作业加工时间累计"
+      ]
+    },
+    {
+      "heading": "【数值声明与复杂度】",
+      "lines": [
+        "无 Big-$M$ 约束;  参数均为整数小时、量纲一致、无需缩放;  CP-SAT 整数域精确求解",
+        "复杂度:  $\\mathcal{P}$ 类（WSPT / Smith 规则: 按 $p_j / w_j$ 升序加工即最优, 用于交叉验证）",
+        "求解器:  OR-Tools CP-SAT 9.x"
+      ]
+    }
+  ],
+  "footer": "OR-Expert · 阶段一数学模型 · 人工审核确认后再进入代码实现"
+}

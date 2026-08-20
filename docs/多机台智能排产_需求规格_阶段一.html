@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多机台智能排产算法 · 需求规格说明书（V4·最终冻结版）</title>
+<script>
+  MathJax = {
+    tex: {
+      tags: 'none',
+      inlineMath: [['$', '$'], ['\(', '\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 900px; margin: 0 auto; padding: 36px 28px; color: #1a1a2e; line-height: 1.8; }
+  h1 { font-size: 24px; border-bottom: 3px solid #4a6cf7; padding-bottom: 12px; }
+  h2 { font-size: 19px; color: #4a6cf7; margin-top: 34px; border-left: 4px solid #4a6cf7; padding-left: 10px; }
+  h3 { font-size: 16px; margin-top: 24px; color: #333; }
+  .subtitle { color: #666; font-size: 14px; margin-top: -8px; }
+  .meta { color: #888; font-size: 12px; margin-top: 6px; }
+  .stage-badge { display: inline-block; background: #4a6cf7; color: #fff; border-radius: 4px; padding: 2px 10px; font-size: 12px; margin-top: 12px; }
+  .stage-badge.pending { background: #e67e22; }
+  .eq { margin: 18px 0; text-align: left; }
+  table { border-collapse: collapse; margin: 14px 0; }
+  td, th { border: 1px solid #999; padding: 6px 18px; text-align: center; }
+  th { background: #f0f4ff; }
+  pre { background: #f6f8fa; border: 1px solid #ddd; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  .note { background: #fff8e6; border: 1px solid #f0d78a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+  footer { margin-top: 44px; color: #aaa; font-size: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+  mjx-container { font-size: 1.08em; }
+</style>
+</head>
+<body>
+<h1>多机台智能排产算法 · 需求规格说明书（V4·最终冻结版）</h1>
+<div class="subtitle">问题类型: 并行机调度 + 序列相关切换 + 机器兼容 + 三目标（无权重） ｜ 复杂度: 强 NP-难 ｜ 求解器: CP-SAT / SCIP / 启发式+元启发（自适应）</div>
+<div class="meta">OR-Expert ｜ 阶段一：需求规格 + 数学模型（待最终审核）｜ 订单不可拆分 ｜ 忽略 priority ｜ 5 层测试 ｜ 生成时间: 2026-08-18 20:52</div>
+<div class="stage-badge pending">阶段一：需求规格 + 数学模型（待最终审核，未经确认禁止编码）</div>
+<h2>一、问题概述与业务背景</h2>
+<p>车间有多台机台，每台只能加工 allowed_recipes 允许的配方。每个订单指定配方、数量、交期（priority 字段<b>忽略</b>，D1），<b>订单不可拆分</b>（整单 = 一个不可中断加工块）。机台切换配方需切换时间（对角=同配方清理，非对角=跨配方切换，均叠加机台 cleanup_time），部分配方对不可切换（null，可绕行）。目标从 makespan / tardiness / 总完工时间 中选 1~3 个，多目标用加权和组合，λ 由用户定义（默认 (0,1,0)，保留多目标能力）。构建原则：<b>性能优先，数据决定模型</b>。</p>
+<div class="note">⚠ 两个关键业务判断: ① 订单不可拆分 → 建模粒度 = 整单（加工时间 = 数量 × 配方单件加工时间）；② load_factor 全部 &gt;1（产能过载）→ 交期软约束，makespan 必超计划周期。</div>
+<h2>二、输入数据格式（5 个 JSON，全层字段一致）</h2>
+<table><tr><th>文件</th><th>字段</th><th>类型</th><th>含义</th><th>备注</th></tr><tr><td>machines.json</td><td>id / name</td><td>str</td><td>机台标识</td><td>m1 / CNC-01</td></tr><tr><td>machines.json</td><td>allowed_recipes</td><td>list[str]</td><td>机台可加工配方</td><td>兼容性约束</td></tr><tr><td>machines.json</td><td>cleanup_time</td><td>int</td><td>机台固有清理时间</td><td>叠加到每次切换</td></tr><tr><td>orders.json</td><td>id / recipe_id</td><td>str</td><td>订单 / 所需配方</td><td>order_0001 / r1</td></tr><tr><td>orders.json</td><td>quantity</td><td>int</td><td>数量（件）</td><td>整单加工时间 = 数量 × 单件时间</td></tr><tr><td>orders.json</td><td>due_time</td><td>int</td><td>交期</td><td>软约束</td></tr><tr><td>orders.json</td><td>priority</td><td>int</td><td>优先级</td><td>忽略（D1），仅输出展示</td></tr><tr><td>recipes.json</td><td>processing_time</td><td>int</td><td>配方单件加工时间</td><td>toy: 5/9/7</td></tr><tr><td>switch_matrix.json</td><td>recipes</td><td>list[str]</td><td>矩阵行列配方顺序</td><td>[&quot;r1&quot;,...]</td></tr><tr><td>switch_matrix.json</td><td>matrix</td><td>int|null</td><td>配方 u→v 切换时间</td><td>null = 不可切换；对角 = 同配方清理</td></tr><tr><td>metadata.json</td><td>num_*/seed/load_factor</td><td>int/float</td><td>统计信息（校验用）</td><td>impossible_switches = null 计数</td></tr></table>
+<p><b>加工时间推导</b>: 订单 j 加工时间 p_j = quantity_j × processing_time(recipe_j)。toy 验证: 35+50+90+7+18 = 200 = metadata.total_processing_time ✓。</p>
+<h3>数据体检关键发现（决定模型口径）</h3>
+<p><b>发现 1（不可行切换）</b>: switch_matrix 用 <b>null</b> 表达「配方 u→v 不可直接切换」（boundary 4×4 含 8 个 null = 50%）。null ≠ 完全互斥，可经中间配方绕行（C4 默认）。</p>
+<p><b>发现 2（产能过载，决定性）</b>: load_factor，toy=0.56（富余），boundary=1.89、medium=1.69、large=1.85、massive=1.75（<b>全部过载</b>）。→ 交期软约束，makespan 必超 plan_horizon，tardiness 成为核心目标。</p>
+<p><b>发现 3（priority 忽略）</b>: D1 确认忽略 priority 字段——不进目标、不作为权重，仅在输出结果中作展示参考。</p>
+<h2>三、五层测试规模（scenarios.json 实测）</h2>
+<table><tr><th>层级</th><th>规模</th><th>Recipe</th><th>load_factor</th><th>不可切换数</th><th>验收标准（性能优先）</th></tr><tr><td>L1 toy</td><td>3 机 × 5 单</td><td>3</td><td>0.56</td><td>0</td><td>必须给出正确解（手工可验证）</td></tr><tr><td>L2 boundary</td><td>4 机 × 12 单</td><td>4</td><td>1.89</td><td>8</td><td>边界鲁棒性，高不可切换比例，不崩溃</td></tr><tr><td>L3 medium</td><td>8 机 × 50 单</td><td>6</td><td>1.69</td><td>6</td><td>5 分钟内出解</td></tr><tr><td>L4 large</td><td>20 机 × 200 单</td><td>12</td><td>1.85</td><td>17</td><td>15 分钟内出解</td></tr><tr><td>L5 massive</td><td>30 机 × 500 单</td><td>20</td><td>1.75</td><td>64</td><td>给出可用解（不要求最优）</td></tr></table>
+<div class="note">⚠ 订单不可拆分 → 决策规模 = 订单数（5/12/50/200/500），精确求解可行性显著提升。</div>
+<h2>四、范式识别与复杂度判定</h2>
+<p><b>范式</b>: 并行机调度 + 序列相关设置时间 + 机器-配方兼容性。每台机器的订单排序本身是带序列相关 setup 的非对称 TSP 子问题，叠加机器分配与兼容性。记为 P_m | M_j, s_uv | 三目标。</p>
+<p><b>复杂度</b>: 无 setup 时 P_m||ΣC_j 已 NP-难；序列相关 setup 使单机排序成为非对称 TSP。结论：L1~L3 用 CP-SAT 精确/时间限制；L4 时间限制 + 元启发兜底；L5 元启发为主（数据决定模型）。</p>
+<h2>五、数学模型（订单粒度，三目标加权和，无权重）</h2>
+<h3>集合 Sets</h3>
+<div class="eq">$$ \mathcal{J} = \{1,\ldots,n\} \text{ 订单}, \quad \mathcal{M} = \{1,\ldots,m\} \text{ 机台}, \quad \mathcal{R} \text{ 配方}, \quad \mathcal{R}_m \subseteq \mathcal{R} \text{ 机台 } m \text{ 可加工配方}  $$</div>
+<h3>参数 Parameters</h3>
+<div class="eq">$$ p_j = q_j \cdot t_{\rho_j}: \text{订单 } j \text{ 加工时间（整数，不可拆分）}, \quad \rho_j: \text{订单 } j \text{ 配方}  $$</div>
+<div class="eq">$$ d_j: \text{交期} \qquad \text{（priority 字段忽略，D1）}  $$</div>
+<div class="eq">$$ c_m: \text{机台清理时间}, \qquad s_{uv}: \text{配方 } u \to v \text{ 切换时间（对角=清理，非对角=切换，null=禁止，可绕行）}  $$</div>
+<h3>决策变量 Decision Variables</h3>
+<div class="eq">$$ x_{jm} \in \{0,1\}: \text{订单 } j \text{ 分配机台 } m  $$</div>
+<div class="eq">$$ S_j \ge 0: \text{开工}, \qquad C_j = S_j + p_j: \text{完工（定义式，不可中断）}, \qquad T_j \ge 0: \text{延误}  $$</div>
+<h3>目标函数（三目标加权和，λ 由用户定义）</h3>
+<div class="eq">$$ \min \; \lambda_1 C_{\max} + \lambda_2 \sum_{j} T_j + \lambda_3 \sum_{j} C_j, \qquad C_{\max} = \max_j C_j \tag{(1)} $$</div>
+<p><b>三基础目标（均无权重）</b>: ① makespan C_max；② tardiness Σ T_j（总延误，D1 无权重）；③ 总完工时间 Σ C_j（C1 无权重）。λ = (λ1, λ2, λ3) 由用户定义（接口留出），至少一个非零；选 1 项 = 单目标，选 2~3 项 = 多目标。<b>默认 λ=(0,1,0)</b>（tardiness 单目标，D2），保留多目标能力。</p>
+<h3>约束条件 Constraints</h3>
+<div class="eq">$$ \sum_{m} x_{jm} = 1, \quad \forall j \qquad \text{每订单恰一机台} \tag{(2)} $$</div>
+<div class="eq">$$ x_{jm} = 0 \; \forall j,m: \rho_j \notin \mathcal{R}_m \qquad \text{机器-配方兼容性} \tag{(3)} $$</div>
+<div class="eq">$$ \text{每机台 } m \text{ 上订单区间 } [S_j, C_j) \text{ 两两不重叠（NoOverlap）} \tag{(4)} $$</div>
+<div class="eq">$$ \text{同机台相邻 } j \to k: S_k \ge C_j + c_m + s_{\rho_j \rho_k} \; (s \ne null) \qquad \text{切换+清理（叠加）} \tag{(5)} $$</div>
+<div class="eq">$$ T_j \ge C_j - d_j, \quad T_j \ge 0 \qquad \text{延误定义（软约束）} \tag{(6)} $$</div>
+<div class="eq">$$ C_{\max} \ge C_j \; \forall j, \qquad C_j = S_j + p_j, \; S_j \ge 0 \qquad \text{makespan 定义 + 不可中断 + 变量域} \tag{(7)} $$</div>
+<div class="note">⚠ 切换时间 (5) 的 null 处理：CP-SAT 中 null 配方对不建立 transition 边（绕行）；元启发中 null 边视为不可行移动。三个目标均无权重（D1 忽略 priority，C1 总完工时间无权重）。</div>
+<h2>六、求解方案选型（数据决定模型，自适应框架）</h2>
+<table><tr><th>层级</th><th>求解器</th><th>策略</th><th>验收（性能优先）</th></tr><tr><td>L1 toy (5 单)</td><td>CP-SAT</td><td>精确求解，证明最优</td><td>正确解 + 手工验证，秒级</td></tr><tr><td>L2 boundary (12 单)</td><td>CP-SAT</td><td>精确 + null 鲁棒处理</td><td>不崩溃，高 null 比例正确</td></tr><tr><td>L3 medium (50 单)</td><td>CP-SAT (time limit)</td><td>300s 时间限制 + best bound</td><td>5 分钟内出可行解</td></tr><tr><td>L4 large (200 单)</td><td>CP-SAT 时间限制 + 元启发兜底</td><td>构造启发式初解 + LNS/ALNS</td><td>15 分钟内出解</td></tr><tr><td>L5 massive (500 单)</td><td>元启发（构造 + ALNS/禁忌/遗传）</td><td>秒级初解 + 迭代改进</td><td>可用解（有界 gap 或质量指标）</td></tr></table>
+<p><b>求解器</b>: ① OR-Tools CP-SAT（精确层，L1~L3，L4 时间限制）；② SCIP（备选精确层）；③ 启发式 + 元启发（L4/L5 主力：EDD/LPT 列表调度初解 + 自适应大邻域搜索 ALNS + 禁忌搜索）。<b>数据决定模型</b>: 读取 metadata 规模自动路由求解层。</p>
+<p><b>性能优先原则</b>: 时间达标 &gt; 最优性证明。L4/L5 达标即接受当前最优解，如实标注 gap/质量，禁止冒充最优。</p>
+<h2>七、输出格式定义（Q8 已确认）</h2>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;OPTIMAL | FEASIBLE | INFEASIBLE | ERROR&quot;,
+  &quot;objective&quot;: { &quot;makespan&quot;: 0, &quot;tardiness&quot;: 0, &quot;total_completion&quot;: 0 },
+  &quot;schedule&quot;: [
+    { &quot;order_id&quot;: &quot;order_0001&quot;, &quot;machine_id&quot;: &quot;m1&quot;, &quot;recipe_id&quot;: &quot;r1&quot;,
+      &quot;start&quot;: 0, &quot;end&quot;: 35, &quot;tardiness&quot;: 17, &quot;priority&quot;: 1 }
+  ],
+  &quot;statistics&quot;: { &quot;solve_time_s&quot;: 1.2, &quot;gap&quot;: 0.0, &quot;num_orders&quot;: 5, &quot;num_machines&quot;: 3 }
+}</code></pre>
+<p>schedule 按订单输出（机台分配 + 起止时刻 + 延误 + priority 展示）；objective 含三目标分量（makespan/tardiness/total_completion）；另附甘特图（matplotlib）与六维核对清单。</p>
+<h2>八、可行性评估与建议（V4 定稿）</h2>
+<table><tr><th>层级</th><th>可行性</th><th>主要风险</th><th>应对</th></tr><tr><td>L1 toy (5 单)</td><td>✓ 高</td><td>无</td><td>CP-SAT 秒级最优，手工对照</td></tr><tr><td>L2 boundary (12 单)</td><td>✓ 高</td><td>50% null 可行性判断</td><td>null 建模 + 可行性预检 + IIS 诊断</td></tr><tr><td>L3 medium (50 单)</td><td>✓ 高</td><td>序列相关 setup 使最优性难证</td><td>CP-SAT 300s 时间限制，达标即收</td></tr><tr><td>L4 large (200 单)</td><td>✓ 中高</td><td>CP-SAT 可能 15min 内无高质量解</td><td>元启发兜底 + warm start</td></tr><tr><td>L5 massive (500 单)</td><td>⚠ 中（可用解）</td><td>500 单 × 序列相关切换精确不可能</td><td>构造启发式 + ALNS，达标=可用解</td></tr></table>
+<p><b>整体结论: 需求可行</b>。订单不可拆分后决策规模 = 500 订单，L1~L3 精确求解无悬念，L4 时间限制 + 兜底，L5 元启发求可用解。三个关键风险与建议：</p>
+<p><b>风险 1（序列相关切换 = 非对称 TSP）</b>: 每机订单排序是 TSP 子问题，切换时间远大于加工时间时排序优化收益高。建议 CP-SAT 用 circuit/transition 表达，元启发用「配方分块」邻域减少切换。</p>
+<p><b>风险 2（过载负载）</b>: L2~L5 产能不足，makespan 必超计划周期，tardiness 目标质量依赖启发式设计。默认 λ=(0,1,0) 以 ΣT 为主目标，与过载场景适配。</p>
+<p><b>风险 3（多目标 λ 标量化）</b>: makespan 与 tardiness 在过载下冲突。λ 接口留出（C3），默认 (0,1,0)，用户可切换任意组合。</p>
+<h2>九、需求确认状态（已全部确认）</h2>
+<table><tr><th>项</th><th>决策</th><th>状态</th></tr><tr><td>Q1 目标函数</td><td>makespan / tardiness / 总完工时间，选 1~3 个，多目标</td><td>✓ 已确认</td></tr><tr><td>Q2 权重</td><td>priority 数字越大越紧急</td><td>✓ 后由 D1 覆盖为忽略</td></tr><tr><td>Q3/Q7 性能优先</td><td>数据决定模型</td><td>✓ 已确认</td></tr><tr><td>Q4→C2 订单不可拆分</td><td>整单加工块</td><td>✓ 已确认</td></tr><tr><td>Q5 切换时间</td><td>对角=清理，非对角=切换，叠加 cleanup</td><td>✓ 已确认</td></tr><tr><td>Q6→C4 null</td><td>禁止直接切换，可绕行</td><td>✓ 已确认</td></tr><tr><td>C1 目标无权重</td><td>总完工时间 ΣC_j 无权重</td><td>✓ 已确认</td></tr><tr><td>C3 λ 接口</td><td>λ 由用户定义</td><td>✓ 已确认</td></tr><tr><td>D1 priority 忽略</td><td>不进目标，仅展示</td><td>✓ 已确认</td></tr><tr><td>D2 λ 默认</td><td>默认 (0,1,0)，保留多目标能力</td><td>✓ 已确认</td></tr></table>
+<h2>十、优先级清单 P0 / P1 / P2</h2>
+<table><tr><th>级别</th><th>事项</th><th>说明</th></tr><tr><td>P0</td><td>最终审核确认</td><td>本文档 V4 人工审核，回复「确认」即冻结</td></tr><tr><td>P0</td><td>数学模型定稿</td><td>公式 (1)~(7) 为唯一事实来源</td></tr><tr><td>P0</td><td>L1 toy 精确求解 + 手工验证</td><td>CP-SAT 秒级，正确性锚点</td></tr><tr><td>P1</td><td>L2 boundary 鲁棒性（null 处理）</td><td>高不可切换比例不崩溃</td></tr><tr><td>P1</td><td>L3 medium 时间限制求解</td><td>5 分钟内出解</td></tr><tr><td>P1</td><td>元启发框架（构造 + ALNS/禁忌）</td><td>L4/L5 求解引擎</td></tr><tr><td>P2</td><td>L4 large 15min + L5 massive 可用解</td><td>压力验收 + gap/质量报告</td></tr><tr><td>P2</td><td>甘特图可视化 + SaaS 接口化</td><td>工程落地</td></tr></table>
+<div class="note">⚠ 人工审核门禁：本文档为阶段一 V4 最终冻结版。所有需求决策点已确认。请回复「确认」即冻结需求，方可进入阶段二编码；未经确认不编写任何求解代码。</div>
+<footer>OR-Expert 过程报告 ｜ 公式为 LaTeX 源码内嵌，可直接编辑后刷新浏览器重新渲染</footer>
+</body>
+</html>

@@ -1,0 +1,70 @@
+{
+  "title": "单机加权完工时间最小化 · 优化方案过程报告",
+  "subtitle": "问题类型: $1 \\| \\cdot \\| \\sum w_j C_j$ ｜ 复杂度: P 类（WSPT 可解析求解）",
+  "meta": "OR-Expert ｜ 任务: 3 作业单机排序 ｜ 求解器: OR-Tools CP-SAT 9.x",
+  "stage": "阶段二：完整报告（已完成）",
+  "sections": [
+    {"type": "heading", "level": 2, "text": "一、问题描述"},
+    {"type": "text", "text": "一台加工机器需处理 3 个生产作业。每个作业一旦开始加工就不能中断，同一时间机器只能处理一个作业。目标：安排作业加工顺序，使所有作业的<b>加权完工时间总和最小</b>。"},
+    {"type": "table", "headers": ["作业 $j$", "加工时间 $p_j$（小时）", "权重 $w_j$"], "rows": [["1", "2", "3"], ["2", "3", "1"], ["3", "1", "2"]]},
+
+    {"type": "heading", "level": 2, "text": "二、数学模型"},
+
+    {"type": "heading", "level": 3, "text": "集合 Sets"},
+    {"type": "math", "tex": "\\mathcal{J} = \\{1, 2, 3\\} \\quad \\text{作业集合}, \\qquad \\mathcal{K} = \\{1, 2, 3\\} \\quad \\text{加工位置集合}"},
+
+    {"type": "heading", "level": 3, "text": "参数 Parameters"},
+    {"type": "math", "tex": "p_j \\in \\mathbb{Z}_{+}: \\text{作业 } j \\text{ 的加工时间（小时）}, \\qquad w_j \\in \\mathbb{Z}_{+}: \\text{作业 } j \\text{ 的权重（优先级）}"},
+
+    {"type": "heading", "level": 3, "text": "决策变量 Decision Variables"},
+    {"type": "math", "tex": "x_{jk} \\in \\{0, 1\\}, \\quad \\forall j \\in \\mathcal{J},\\ k \\in \\mathcal{K} \\qquad \\text{（} x_{jk} = 1 \\text{ 当且仅当作业 } j \\text{ 排在第 } k \\text{ 位）}"},
+
+    {"type": "heading", "level": 3, "text": "目标函数 Objective"},
+    {"type": "math", "tex": "\\min \\sum_{k \\in \\mathcal{K}} C_k \\sum_{j \\in \\mathcal{J}} w_j \\, x_{jk}", "tag": "(1)"},
+
+    {"type": "heading", "level": 3, "text": "约束条件 Constraints"},
+    {"type": "math", "tex": "\\sum_{k \\in \\mathcal{K}} x_{jk} = 1, \\quad \\forall j \\in \\mathcal{J} \\qquad \\text{每个作业恰好占据一个位置}", "tag": "(2)"},
+    {"type": "math", "tex": "\\sum_{j \\in \\mathcal{J}} x_{jk} = 1, \\quad \\forall k \\in \\mathcal{K} \\qquad \\text{每个位置恰好安排一个作业}", "tag": "(3)"},
+    {"type": "math", "tex": "C_k = \\sum_{l=1}^{k} \\sum_{j \\in \\mathcal{J}} p_j \\, x_{jl}, \\quad \\forall k \\in \\mathcal{K} \\qquad \\text{第 } k \\text{ 位完工时间 = 前 } k \\text{ 个作业加工时间累计}", "tag": "(4)"},
+
+    {"type": "heading", "level": 3, "text": "乘积线性化（CP-SAT 实现辅助变量）"},
+    {"type": "math", "tex": "W_k = \\sum_{j \\in \\mathcal{J}} w_j \\, x_{jk}, \\quad \\forall k \\in \\mathcal{K}", "tag": "(5)"},
+    {"type": "math", "tex": "Z_k = C_k \\cdot W_k, \\quad \\forall k \\in \\mathcal{K}", "tag": "(6)"},
+    {"type": "text", "text": "目标 (1) 等价于 $\\min \\sum_{k \\in \\mathcal{K}} Z_k$——CP-SAT 不支持两个变量直接相乘，用乘法等式约束 (6) 建模（7 大类线性化技巧之一）。"},
+
+    {"type": "heading", "level": 2, "text": "三、数值声明与复杂度"},
+    {"type": "text", "text": "无 Big-$M$ 约束（位置模型天然线性）；参数均为整数小时、量纲一致、无需缩放；CP-SAT 整数域精确求解。"},
+    {"type": "text", "text": "复杂度: $\\mathcal{P}$ 类——WSPT / Smith 规则（按 $p_j / w_j$ 升序加工）即最优，用于交叉验证。"},
+
+    {"type": "heading", "level": 2, "text": "四、求解结果"},
+    {"type": "text", "text": "最优加工顺序: <b>J3 → J1 → J2</b>，最小加权完工时间总和 $\\sum w_j C_j = \\mathbf{17}$（CP-SAT 精确最优，与 WSPT 解析解、全排列穷举<b>三重交叉验证一致</b>）。"},
+    {"type": "table", "headers": ["作业", "加工时间 $p_j$", "权重 $w_j$", "完工时间 $C_j$", "加权贡献 $w_j \\cdot C_j$"], "rows": [
+      ["J3", "1", "2", "1", "2"],
+      ["J1", "2", "3", "3", "9"],
+      ["J2", "3", "1", "6", "6"],
+      ["合计", "6", "—", "—", "<b>17</b>"]]},
+    {"type": "figure", "src": "wct_gantt.png", "caption": "图 1: 最优加工顺序甘特图（J3→J1→J2，完工时间标注）"},
+    {"type": "figure", "src": "wct_compare.png", "caption": "图 2: 6 种排列加权完工时间对比（最优 17）"},
+    {"type": "text", "text": "<b>结果解读</b>: 最短且权重高的 J3（1h, w=2）最先加工，最长且权重最低的 J2（3h, w=1）最后加工——WSPT 规则的经济学直觉: 让「高优先级短作业」尽早完成，避免积压放大加权成本。次优方案 J1→J3→J2 目标 18（差 5.9%），最差方案 J2→J1→J3 目标 30。"},
+
+    {"type": "heading", "level": 2, "text": "五、求解代码（逐行注释公式编号）"},
+    {"type": "text", "text": "完整可运行脚本（CP-SAT 求解 + WSPT / 穷举交叉验证），代码行注释对应公式编号 (1)-(6):"},
+    {"type": "code_file", "path": "scripts/single_machine_wct.py", "lang": "python"},
+
+    {"type": "heading", "level": 2, "text": "六、业务解读"},
+    {"type": "text", "text": "<b>1. 解的物理含义</b>: 先做 J3（1 小时、权重 2），再做 J1（2 小时、权重 3），最后做 J2（3 小时、权重 1）。总加权完工时间 17 小时。"},
+    {"type": "text", "text": "<b>2. 瓶颈与杠杆点</b>: 单机即唯一瓶颈（资源利用率 100%）；权重是决策杠杆——J1 权重最高（3）且耗时适中，其位置靠前贡献 9；J2 权重最低且耗时最长，被放到最后。"},
+    {"type": "text", "text": "<b>3. 敏感性分析</b>: 顺序由比值 $p_j / w_j$ 决定。若 J2 权重从 1 增至 $> 4.5$，J2 将提前到 J1 之前（$> 6$ 则排到最前）；若 J1 加工时间增至 $> 9$ 小时，J1 将排到 J2 之后。"},
+    {"type": "text", "text": "<b>4. 行动建议</b>: 生产中遵循「高权重短作业优先」；权重/加工时间波动时直接用 WSPT 规则 $O(n \\log n)$ 重排，无需重新建模求解。"},
+
+    {"type": "heading", "level": 2, "text": "七、六维核对清单"},
+    {"type": "table", "headers": ["维度", "检查项", "结论"], "rows": [
+      ["数据层", "参数完整、口径一致（p: 小时, w: 权重）", "✓ 通过"],
+      ["建模正确性", "目标=最小化加权完工时间；不可中断/单机规则由位置模型表达", "✓ 通过"],
+      ["数学合理性", "无冗余/矛盾约束；量纲一致；可行域非空（6 个排列）", "✓ 通过"],
+      ["公式-代码一致性", "代码逐行标注公式编号 (1)-(6)，与模型一致", "✓ 通过"],
+      ["求解适配性", "P 类→CP-SAT 精确求解、零 gap；WSPT+穷举交叉验证一致", "✓ 通过"],
+      ["边界鲁棒性", "n=3 全排列穷举完备；WSPT 对任意规模 O(n log n) 成立", "✓ 通过"]]},
+    {"type": "note", "text": "测试边界声明: 本案例为 L1 玩具用例（穷举可完备验证最优性）；L2 边界（单作业/零权重）、L3 异常（空输入）、L4 大规模性能测试留待生产规模任务补充。"}
+  ]
+}

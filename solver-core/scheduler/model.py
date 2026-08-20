@@ -90,7 +90,14 @@ def load_data(data_dir: str) -> DataModel:
     orders_raw = _read("orders.json")
     recipes_raw = _read("recipes.json")
     switch_raw = _read("switch_matrix.json")
+    return build_data_model(machines_raw, orders_raw, recipes_raw, switch_raw)
 
+
+def build_data_model(machines_raw, orders_raw, recipes_raw, switch_raw) -> DataModel:
+    """从 4 个原始数据结构构建 DataModel（字段校验 + 派生量）。
+
+    backend/SaaS 层可直接从已解析的 dict/list 调用，无需落盘为 JSON 文件。
+    """
     # 空输入检测（L3）
     if not machines_raw:
         raise DataError("ERR_EMPTY_MACHINES", "机台列表为空")

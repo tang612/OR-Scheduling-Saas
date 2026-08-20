@@ -1,0 +1,62 @@
+{
+  "title": "多机台智能排产算法 · 模型报告",
+  "subtitle": "问题类型: 并行机调度 + 序列相关切换 + 机器兼容 + 三目标 ｜ 复杂度: 强 NP-难 ｜ 求解器: CP-SAT / 启发式+元启发（自适应）",
+  "meta": "OR-Expert ｜ 阶段二：模型报告（需求 V4 冻结版 + 第一性原理审查 + 代码结构）",
+  "stage": "阶段二：完整模型报告",
+  "sections": [
+    {"type": "heading", "level": 2, "text": "一、问题定义（需求 V4 冻结版）"},
+    {"type": "text", "text": "多台机台并行加工，每台只能加工 allowed_recipes 允许的配方；订单<b>不可拆分</b>（整单加工块 p_j = 数量 × 单件加工时间）；机台切换配方需切换时间（对角=同配方清理，非对角=跨配方切换，均叠加 cleanup_time）；部分配方对不可切换（null，可经中间配方绕行）。<b>priority 字段忽略</b>（D1）。"},
+    {"type": "text", "text": "<b>三目标（均无权重）</b>: ① makespan C_max；② tardiness ΣT_j；③ total completion ΣC_j。多目标加权和 λ1·C_max + λ2·ΣT_j + λ3·ΣC_j，λ 由用户定义，默认 (0,1,0)。<b>性能优先，数据决定模型</b>。"},
+
+    {"type": "heading", "level": 2, "text": "二、数学模型（公式编号 (1)~(7)，代码逐行映射）"},
+    {"type": "heading", "level": 3, "text": "集合与参数"},
+    {"type": "math", "tex": "\\mathcal{J} = \\{1,\\ldots,n\\} \\text{ 订单}, \\; \\mathcal{M} = \\{1,\\ldots,m\\} \\text{ 机台}, \\; \\mathcal{R} \\text{ 配方}, \\; \\mathcal{R}_m \\subseteq \\mathcal{R} \\text{ 机台 } m \\text{ 可加工配方}"},
+    {"type": "math", "tex": "p_j = q_j \\cdot t_{\\rho_j} \\text{（订单加工时间，整数，不可拆分）}, \\; d_j \\text{（交期）}, \\; c_m \\text{（清理）}, \\; s_{uv} \\text{（切换，对角=清理/非对角=切换/null=禁止）}"},
+    {"type": "heading", "level": 3, "text": "决策变量"},
+    {"type": "math", "tex": "x_{jm} \\in \\{0,1\\} \\text{（订单 j 分配机台 m）}, \\; S_j \\ge 0 \\text{（开工）}, \\; C_j = S_j + p_j \\text{（完工，不可中断）}, \\; T_j \\ge 0 \\text{（延误）}"},
+    {"type": "heading", "level": 3, "text": "目标函数"},
+    {"type": "math", "tex": "\\min \\; \\lambda_1 C_{\\max} + \\lambda_2 \\sum_j T_j + \\lambda_3 \\sum_j C_j, \\qquad C_{\\max} = \\max_j C_j", "tag": "(1)"},
+    {"type": "heading", "level": 3, "text": "约束条件"},
+    {"type": "math", "tex": "\\sum_m x_{jm} = 1, \\; \\forall j \\qquad \\text{每订单恰一机台}", "tag": "(2)"},
+    {"type": "math", "tex": "x_{jm} = 0 \\; \\forall j,m: \\rho_j \\notin \\mathcal{R}_m \\qquad \\text{机器-配方兼容}", "tag": "(3)"},
+    {"type": "math", "tex": "\\text{每机台 } m \\text{ 上区间 } [S_j, C_j) \\text{ 两两不重叠（NoOverlap）}", "tag": "(4)"},
+    {"type": "math", "tex": "\\text{同机台相邻 } j \\to k: S_k \\ge C_j + c_m + s_{\\rho_j \\rho_k} \\; (s \\ne null) \\qquad \\text{切换+清理叠加}", "tag": "(5)"},
+    {"type": "math", "tex": "T_j \\ge C_j - d_j, \\; T_j \\ge 0 \\qquad \\text{延误（软约束）}", "tag": "(6)"},
+    {"type": "math", "tex": "C_{\\max} \\ge C_j \\; \\forall j, \\quad C_j = S_j + p_j, \\; S_j \\ge 0 \\qquad \\text{makespan + 变量域}", "tag": "(7)"},
+
+    {"type": "heading", "level": 2, "text": "三、求解方案选型（数据决定模型）"},
+    {"type": "table", "headers": ["层级", "规模", "求解器", "策略"], "rows": [
+      ["L1 toy", "3 机 × 5 单", "CP-SAT", "精确，证明最优"],
+      ["L2 boundary", "4 机 × 12 单", "CP-SAT", "精确 + null 预检"],
+      ["L3 medium", "8 机 × 50 单", "CP-SAT(300s)", "时间限制"],
+      ["L4 large", "20 机 × 200 单", "构造 + ALNS", "900s 元启发"],
+      ["L5 massive", "30 机 × 500 单", "构造 + ALNS", "可用解（本阶段跳过）"]]},
+
+    {"type": "heading", "level": 2, "text": "四、第一性原理审查结论（反幻觉清单）"},
+    {"type": "heading", "level": 3, "text": "已修正的错误断言"},
+    {"type": "table", "headers": ["#", "原错误", "修正后事实"], "rows": [
+      ["E1", "无 setup 时 P_m‖ΣC_j 已强 NP-难", "P_m‖ΣC_j 多项式可解（SPT 最优）；NP-难来自 ΣT_j 与序列相关 setup"],
+      ["E2", "单机 1‖ΣT 下 EDD 最优", "EDD 是 1‖L_max 最优；1‖ΣT_j 是 NP-难（EDD 仅启发式）"],
+      ["E3", "horizon = Σp + max_setup×(n+m)", "收紧为 Σp + (n−1)×max_s（切换次数 ≤ n−1）"]]},
+    {"type": "heading", "level": 3, "text": "已实机验证的 API 事实"},
+    {"type": "table", "headers": ["#", "事实", "证据"], "rows": [
+      ["F1", "AddTransitionTime 不存在（ortools 9.15.6755）", "实例 hasattr ✗"],
+      ["F2", "AddCircuit/AddNoOverlap/AddMaxEquality 存在", "实例 hasattr ✓"],
+      ["F3", "序列相关 setup 用 AddCircuit + 弧 literal + OnlyEnforceIf", "落库 solver-findings.md"],
+      ["F4", "SPT 最优于 1‖ΣC、P_m‖ΣC；WSPT 最优于 1‖ΣwC", "调度理论"],
+      ["F5", "LPT 是 P‖C_max 的 (4/3−1/3m) 近似", "Graham 1969"],
+      ["F6", "load_factor 不含 setup+cleanup（实际负载更高）", "五层数据逐一验证"]]},
+
+    {"type": "heading", "level": 2, "text": "五、代码结构"},
+    {"type": "code", "lang": "text", "code": "scripts/scheduler/\n  __init__.py       # 包导出\n  model.py          # 数据模型 + 加载 + 体检 + 预检 + 评估\n  cp_sat.py         # CP-SAT 精确求解（circuit 表达切换）\n  heuristics.py     # 构造启发式（EDD/SPT/LPT）+ ALNS\n  router.py         # 求解器路由（数据决定模型）\n  visualize.py      # 分层可视化（负载/热力图/延误散点/甘特图）\nscripts/run_scheduler.py  # CLI 单层求解\nscripts/run_tests.py      # L1-L4 测试 + 约束验证 + 报告"},
+    {"type": "text", "text": "公式-代码映射：model.py 派生量对应公式参数；cp_sat.py 逐行注释公式编号 (2)~(7)；heuristics.py 注释理论锚点（SPT/EDD/LPT）。"},
+
+    {"type": "heading", "level": 2, "text": "六、测试结果（L1/L2 已确认）"},
+    {"type": "table", "headers": ["层级", "状态", "makespan", "ΣT", "ΣC", "耗时", "验证"], "rows": [
+      ["L1 toy", "OPTIMAL", "90", "82", "254", "0.01s", "✓ 通过（下界=解值，最优性得证）"],
+      ["L2 boundary", "OPTIMAL", "570", "1270", "3058", "24.7s", "✓ 通过（8 null 正确处理）"],
+      ["L3 medium", "FEASIBLE", "933", "7292", "20512", "300s", "✓ 通过（ALNS 优于 CP-SAT 300s 的 7828）"],
+      ["L4 large", "FEASIBLE", "2120", "53169", "156014", "900s", "✓ 通过（30 万次迭代）"]]},
+    {"type": "note", "text": "L1 手工验证：order_0002(p=90,due=25) 延误下界 65 + order_0001(p=35,due=18) 下界 17 = 82 = ΣT，解值达到下界，最优性由下界直接证明。"}
+  ]
+}

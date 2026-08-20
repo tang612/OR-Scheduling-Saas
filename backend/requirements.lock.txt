@@ -9,3 +9,8 @@ httptools==0.8.0
 uvloop==0.22.1
 watchfiles==1.2.0
 websockets==17.0.1
+pymongo==4.17.0
+PyJWT==2.13.0
+bcrypt==5.0.0
+redis==8.1.0
+rq==2.11.0
