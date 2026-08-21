@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { api, setToken, getToken } from './api'
 import Gantt from './Gantt'
 
@@ -22,6 +22,17 @@ interface Solution {
 }
 interface GanttData { machines: any[]; jobs: any[]; setup: any[]; meta: any }
 
+const STAGES = ['排队中', '求解中', '完成']
+const DS_FIELDS = ['machines', 'orders', 'recipes', 'switch_matrix']
+const TEMPLATE_KEY = 'dataset_template'
+
+function stageInfo(status: string): { index: number; error: boolean } {
+  if (status === 'pending') return { index: 0, error: false }
+  if (status === 'running') return { index: 1, error: false }
+  if (status === 'succeeded') return { index: 2, error: false }
+  return { index: 1, error: true } // failed / cancelled
+}
+
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken())
   const [view, setView] = useState<'tasks' | 'submit' | 'detail'>('tasks')
@@ -36,6 +47,7 @@ export default function App() {
   // 任务列表 / 数据集
   const [tasks, setTasks] = useState<Task[]>([])
   const [datasets, setDatasets] = useState<Dataset[]>([])
+  const [loading, setLoading] = useState(false)
 
   // 提交表单
   const [taskName, setTaskName] = useState('')
@@ -47,6 +59,7 @@ export default function App() {
   // 数据集上传
   const [dsName, setDsName] = useState('')
   const [dsJson, setDsJson] = useState('')
+  const [dsError, setDsError] = useState('')
 
   // 详情
   const [currentTask, setCurrentTask] = useState<Task | null>(null)
@@ -56,7 +69,8 @@ export default function App() {
   const esRef = useRef<EventSource | null>(null)
 
   const loadTasks = useCallback(async () => {
-    try { setTasks(await api('GET', '/tasks')) } catch (e: any) { setError(e.message) }
+    setLoading(true)
+    try { setTasks(await api('GET', '/tasks')) } catch (e: any) { setError(e.message) } finally { setLoading(false) }
   }, [])
 
   const loadDatasets = useCallback(async () => {
@@ -80,6 +94,33 @@ export default function App() {
 
   const logout = () => { setToken(null); setAuthed(false); setView('tasks') }
 
+  // ---- 数据集：实时校验 + 模板 ----
+  const onDsJsonChange = (val: string) => {
+    setDsJson(val)
+    if (!val.trim()) { setDsError(''); return }
+    try {
+      const d = JSON.parse(val)
+      const missing = DS_FIELDS.filter((k) => !d[k])
+      setDsError(missing.length ? `缺少字段：${missing.join('、')}` : '')
+    } catch (e: any) {
+      setDsError('JSON 语法错误：' + e.message)
+    }
+  }
+
+  const saveTemplate = () => {
+    if (dsError) { setError('JSON 校验未通过，无法保存模板'); return }
+    if (!dsJson.trim()) { setError('请先输入数据集 JSON'); return }
+    localStorage.setItem(TEMPLATE_KEY, dsJson)
+    setInfo('数据集模板已保存到本地')
+  }
+
+  const loadTemplate = () => {
+    const t = localStorage.getItem(TEMPLATE_KEY)
+    if (!t) { setInfo('暂无已保存的模板'); return }
+    onDsJsonChange(t)
+    setInfo('模板已加载')
+  }
+
   const uploadDataset = async () => {
     setError(''); setInfo('')
     try {
@@ -87,7 +128,7 @@ export default function App() {
       if (!d.machines || !d.orders || !d.recipes || !d.switch_matrix) throw new Error('JSON 需含 machines/orders/recipes/switch_matrix')
       const r = await api('POST', '/datasets', { name: dsName, ...d })
       setInfo(`数据集已上传（${r.num_orders} 单 × ${r.num_machines} 机）`)
-      setDsName(''); setDsJson('')
+      setDsName(''); setDsJson(''); setDsError('')
       loadDatasets()
     } catch (e: any) { setError(e.message) }
   }
@@ -114,6 +155,19 @@ export default function App() {
       const r = await api('GET', `/solutions/${sid}`)
       setGantt(r.gantt)
       setActiveSol(sid)
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const cancelTask = async () => {
+    if (!currentTask) return
+    if (!window.confirm('确认取消该任务？正在求解的任务将被终止。')) return
+    setError(''); setInfo('')
+    try {
+      await api('DELETE', `/tasks/${currentTask.id}`)
+      setInfo('任务已取消')
+      const t = await api('GET', `/tasks/${currentTask.id}`)
+      setCurrentTask(t)
+      loadTasks()
     } catch (e: any) { setError(e.message) }
   }
 
@@ -183,24 +237,29 @@ export default function App() {
       {view === 'tasks' && (
         <div className="card">
           <h3>任务列表</h3>
-          <table>
-            <thead><tr><th>名称</th><th>状态</th><th>进度</th><th>求解器</th><th>ΣT</th><th>操作</th></tr></thead>
-            <tbody>
-              {tasks.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.name}</td>
-                  <td><span className={`badge ${t.status}`}>{t.status}</span></td>
-                  <td style={{ width: 160 }}>
-                    <div className="progress-bar"><div className="progress-fill" style={{ width: `${(t.progress || 0) * 100}%` }} /></div>
-                  </td>
-                  <td>{t.solver || '-'}</td>
-                  <td>{t.objective?.tardiness ?? '-'}</td>
-                  <td><button className="btn secondary" onClick={() => openTask(t)}>查看</button></td>
-                </tr>
-              ))}
-              {tasks.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: '#999' }}>暂无任务</td></tr>}
-            </tbody>
-          </table>
+          {loading ? (
+            <div className="empty"><span className="empty-icon">⏳</span>加载中…</div>
+          ) : tasks.length === 0 ? (
+            <div className="empty"><span className="empty-icon">📋</span>暂无任务，去「提交任务」创建一个吧</div>
+          ) : (
+            <table>
+              <thead><tr><th>名称</th><th>状态</th><th>进度</th><th>求解器</th><th>ΣT</th><th>操作</th></tr></thead>
+              <tbody>
+                {tasks.map((t) => (
+                  <tr key={t.id}>
+                    <td>{t.name}</td>
+                    <td><span className={`badge ${t.status}`}>{t.status}</span></td>
+                    <td style={{ width: 160 }}>
+                      <div className="progress-bar"><div className="progress-fill" style={{ width: `${(t.progress || 0) * 100}%` }} /></div>
+                    </td>
+                    <td>{t.solver || '-'}</td>
+                    <td>{t.objective?.tardiness ?? '-'}</td>
+                    <td><button className="btn secondary small" onClick={() => openTask(t)}>查看</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -212,9 +271,19 @@ export default function App() {
               <div><label>数据集名称</label><input value={dsName} onChange={(e) => setDsName(e.target.value)} placeholder="周二排程" /></div>
             </div>
             <label>五 JSON 合并（machines / orders / recipes / switch_matrix）</label>
-            <textarea rows={8} value={dsJson} onChange={(e) => setDsJson(e.target.value)}
-              placeholder='{"machines":[...],"orders":[...],"recipes":[...],"switch_matrix":{"recipes":[...],"matrix":[...]}}' />
-            <button className="btn" onClick={uploadDataset}>上传数据集</button>
+            <textarea
+              rows={8}
+              value={dsJson}
+              onChange={(e) => onDsJsonChange(e.target.value)}
+              className={dsError ? 'textarea-error' : ''}
+              placeholder='{"machines":[...],"orders":[...],"recipes":[...],"switch_matrix":{"recipes":[...],"matrix":[...]}}'
+            />
+            {dsError && <div className="field-error">⚠ {dsError}</div>}
+            <div className="btn-group">
+              <button className="btn" onClick={uploadDataset} disabled={!!dsError || !dsJson.trim() || !dsName.trim()}>上传数据集</button>
+              <button className="btn secondary" onClick={saveTemplate}>保存模板</button>
+              <button className="btn secondary" onClick={loadTemplate}>加载模板</button>
+            </div>
           </div>
 
           <div className="card">
@@ -249,7 +318,31 @@ export default function App() {
 
       {view === 'detail' && currentTask && (
         <div className="card">
-          <h3>任务详情：{currentTask.name}</h3>
+          <div className="row" style={{ marginBottom: 12 }}>
+            <h3 style={{ margin: 0, flex: 2 }}>任务详情：{currentTask.name}</h3>
+            {(currentTask.status === 'pending' || currentTask.status === 'running') && (
+              <button className="btn danger small" onClick={cancelTask}>取消任务</button>
+            )}
+          </div>
+
+          {/* 分阶段进度步骤条 */}
+          {(() => {
+            const st = stageInfo(currentTask.status)
+            return (
+              <div className="steps">
+                {STAGES.map((s, i) => (
+                  <Fragment key={s}>
+                    {i > 0 && <div className={`step-line ${i <= st.index || st.error ? 'done' : ''}`} />}
+                    <div className={`step ${i < st.index ? 'done' : i === st.index ? (st.error ? 'error' : 'active') : ''}`}>
+                      <span className="dot">{i < st.index ? '✓' : st.error && i === st.index ? '!' : i + 1}</span>
+                      {s}
+                    </div>
+                  </Fragment>
+                ))}
+              </div>
+            )
+          })()}
+
           <div className="row" style={{ marginBottom: 12 }}>
             <div><span className={`badge ${currentTask.status}`}>{currentTask.status}</span></div>
             <div>阶段：{currentTask.stage || '-'}</div>
@@ -279,7 +372,7 @@ export default function App() {
                       <td>{s.objective.completion ?? '-'}</td>
                       <td>{s.gap != null ? s.gap.toFixed(3) : '-'}</td>
                       <td>{s.solve_time_s.toFixed(2)}s</td>
-                      <td><button className="btn secondary" onClick={() => loadSolution(s.id)}>查看</button></td>
+                      <td><button className="btn secondary small" onClick={() => loadSolution(s.id)}>查看</button></td>
                     </tr>
                   ))}
                 </tbody>
