@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from rq import Queue
 
 from scheduler.model import DataError, feasibility_check
@@ -23,12 +23,41 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 # 队列分级：数据规模决定求解器，也决定队列（CPU 资源隔离）
 _QUEUES = {20: "quick", 80: "alns300", float("inf"): "alns900"}
 
+# 排队超时阈值（pending 超过该秒数未拾取 → 前端高亮警告）
+QUEUE_TIMEOUT_S = 300
+
 
 def _queue_name(n: int) -> str:
     for limit in sorted(_QUEUES):
         if n <= limit:
             return _QUEUES[limit]
     return "alns900"
+
+
+def _is_queue_timeout(t: dict) -> bool:
+    """惰性检测：pending 且超阈值 → 排队超时（不改 status，仅提示标记）。"""
+    if t.get("status") != "pending" or t.get("created_at") is None:
+        return False
+    elapsed = (datetime.now(timezone.utc) - t["created_at"]).total_seconds()
+    return elapsed > QUEUE_TIMEOUT_S
+
+
+def _queue_position(cols: dict, t: dict) -> int | None:
+    """任务在队列中的位置（前面还有几个任务）；非 pending 或无队列返回 None。"""
+    if t.get("status") != "pending":
+        return None
+    ds = cols["datasets"].find_one({"_id": t["dataset_id"]})
+    if ds is None:
+        return None
+    n = len(ds["data"]["orders"])
+    try:
+        ids = Queue(_queue_name(n), connection=get_redis()).get_job_ids()
+    except Exception:  # noqa: BLE001 —— 队列查询失败不阻塞详情返回
+        return None
+    task_id = str(t["_id"])
+    if task_id in ids:
+        return ids.index(task_id)
+    return None
 
 
 def _to_out(t: dict) -> TaskOut:
@@ -38,7 +67,11 @@ def _to_out(t: dict) -> TaskOut:
         progress=t.get("progress", 0.0), stage=t.get("stage", ""),
         solver=t.get("solver"), objective=t.get("objective"),
         error=t.get("error"), created_at=t["created_at"],
+        dispatched_at=t.get("dispatched_at"),
         finished_at=t.get("finished_at"),
+        queue_position=None,   # get_task 惰性计算后覆盖
+        queue_timeout=_is_queue_timeout(t),
+        timeline=t.get("timeline") or [],
     )
 
 
@@ -118,7 +151,37 @@ def get_task(
     )
     if t is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "任务不存在")
-    return _to_out(t)
+    out = _to_out(t)
+    out.queue_position = _queue_position(cols, t)
+    return out
+
+
+@router.get("/{task_id}/logs.txt")
+def task_logs_txt(
+    task_id: str,
+    user=Depends(get_current_user),
+    cols=Depends(get_collections),
+) -> Response:
+    """导出任务全量求解日志（TXT）。成功：solution.logs；失败/取消：tasks.logs。"""
+    t = cols["tasks"].find_one(
+        {"_id": ObjectId(task_id), "tenant_id": user["tenant_id"]}
+    )
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "任务不存在")
+
+    lines: list[str] = []
+    for s in cols["solutions"].find({"task_id": ObjectId(task_id)}):
+        lines.extend(s.get("logs") or [])
+    if not lines:
+        lines = t.get("logs") or []
+    if not lines:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "该任务无日志记录")
+
+    content = "\n".join(lines) + "\n"
+    return Response(
+        content=content, media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="task-{task_id}-logs.txt"'},
+    )
 
 
 @router.get("/{task_id}/events")
@@ -138,13 +201,16 @@ def task_events(
     channel = task_channel(task_id)
 
     def gen():
-        # 快照（断线重连/首次连接：先给当前状态）
+        # 快照（断线重连/首次连接：先给当前状态 + 时间线 + 排队信息）
         yield "data: " + json.dumps({
             "type": "snapshot",
             "status": task.get("status"),
             "progress": task.get("progress", 0.0),
             "stage": task.get("stage", ""),
-        }, ensure_ascii=False) + "\n\n"
+            "timeline": task.get("timeline") or [],
+            "dispatched_at": task.get("dispatched_at"),
+            "queue_timeout": _is_queue_timeout(task),
+        }, ensure_ascii=False, default=str) + "\n\n"
 
         # 已终态：直接结束（不订阅，避免错过 done 事件后阻塞）
         if task.get("status") in ("succeeded", "failed", "cancelled"):

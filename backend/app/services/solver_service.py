@@ -34,7 +34,7 @@ def _schedule_to_dict(schedule) -> dict | None:
 
 def _format(result: dict, solver_name: str) -> dict:
     schedule = result.get("schedule")
-    return {
+    out = {
         "status": result["status"],
         "solver": solver_name,
         "objective": {
@@ -47,14 +47,20 @@ def _format(result: dict, solver_name: str) -> dict:
         "solve_time_s": result.get("solve_time_s"),
         "schedule": _schedule_to_dict(schedule),
     }
+    # Dashboard v2 过程数据透传（白名单：求解器层有则带，无则不出现）
+    for k in ("initial_objective", "convergence", "iteration_log", "operator_stats",
+              "iterations", "termination", "params", "logs"):
+        if result.get(k) is not None:
+            out[k] = result[k]
+    return out
 
 
 def _solve_engine(data_model, weights: tuple, time_budget: float | None, seed: int,
-                  name: str, progress_cb, cancel) -> tuple[dict, str]:
+                  name: str, progress_cb, cancel, log_cb=None) -> tuple[dict, str]:
     """按引擎名求解，返回 (raw_result, 稳定引擎名)。"""
     if name == "cpsat":
         r = cp_sat.solve(data_model, weights, time_limit=time_budget,
-                         progress_cb=progress_cb, cancel=cancel)
+                         progress_cb=progress_cb, cancel=cancel, log_cb=log_cb)
         return r, "CP-SAT"
     if name == "alns":
         budget = time_budget if time_budget else 300.0
@@ -63,24 +69,25 @@ def _solve_engine(data_model, weights: tuple, time_budget: float | None, seed: i
         return r, "ALNS"
     # auto：规模路由
     r = router.solve(data_model, lambda_=weights, time_budget=time_budget, seed=seed,
-                     progress_cb=progress_cb, cancel=cancel)
+                     progress_cb=progress_cb, cancel=cancel, log_cb=log_cb)
     return r, r.get("solver", "auto")
 
 
 def run_solve_sync(data_model, weights: tuple, time_budget: float | None, seed: int,
-                   solver: str = "auto", progress_cb=None, cancel=None):
+                   solver: str = "auto", progress_cb=None, cancel=None,
+                   log_cb=None):
     """同步求解，返回单个 result dict；solver="all" 时返回结果列表。
 
-    progress_cb(percent, stage) / cancel()->bool 透传给 solver-core。
+    progress_cb(percent, stage) / cancel()->bool / log_cb(line) 透传给 solver-core。
     """
     if solver == "all":
         results = []
         for name in ("cpsat", "alns"):
             raw, display = _solve_engine(data_model, weights, time_budget, seed,
-                                         name, progress_cb, cancel)
+                                         name, progress_cb, cancel, log_cb)
             results.append(_format(raw, display))
         return results
     name = solver if solver in ("cpsat", "alns") else "auto"
     raw, display = _solve_engine(data_model, weights, time_budget, seed, name,
-                                 progress_cb, cancel)
+                                 progress_cb, cancel, log_cb)
     return _format(raw, display)

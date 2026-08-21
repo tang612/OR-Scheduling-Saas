@@ -36,7 +36,17 @@ model.Add(S_k >= C_i + setup).OnlyEnforceIf(arc_lit[i, k])
 # null 切换 = 不建弧（禁止紧邻，可经第三配方订单绕行）
 ```
 
+### 求解日志 / 收敛轨迹 API（2026-08 Dashboard 优化验证）
+
+| API | 存在性 | 用法 |
+|---|---|---|
+| `solver.log_callback`（**属性赋值**，非方法） | ✓ 实例 hasattr | `solver.log_callback = fn`（每行日志回调一次 str）；`SetLogCallback` 方法不存在 |
+| `solver.parameters.log_search_progress` | ✓ | `= True` 开启搜索过程日志（注意：num_workers=8 并行时日志量大，采集端必须设行数上限） |
+| `solver.WallTime()` / `BestObjectiveBound()` / `ObjectiveValue()` | ✓ | 求解结束后取值；SolutionCallback 内 `self.WallTime()` 亦可取墙钟时间 |
+
+**结论**：CP-SAT 实时日志 = `log_search_progress=True` + `log_callback` 属性赋值；收敛轨迹 = SolutionCallback 内采样 `(WallTime, ObjectiveValue, BestObjectiveBound)`，上限 500 点等间隔抽稀。
+
 ### 版本变更速查
 
-- 9.15：双命名并存确认；`AddEndBeforeStart` 缺失；`AddTransitionTime` 缺失（setup 用 AddCircuit 表达）
+- 9.15：双命名并存确认；`AddEndBeforeStart` 缺失；`AddTransitionTime` 缺失（setup 用 AddCircuit 表达）；`log_callback` 为属性赋值（非方法）；`log_search_progress` 可用
 - （后续版本更新时在此追加对比记录）

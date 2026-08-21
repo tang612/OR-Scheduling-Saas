@@ -152,11 +152,14 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
          seed: int = 42, verbose: bool = True, w_bal: float = 0.0,
          w_flex: float = 0.0, obj_scale: float | None = None,
          imp_patience: int | None = None, imp_threshold: float = 1e-4,
-         return_history: bool = False, progress_cb=None, cancel=None):
+         return_history: bool = False, return_trace: bool = False,
+         progress_cb=None, cancel=None):
     """自适应大邻域搜索 + 模拟退火。
 
     扩展（方案 V3）：多指标引导目标（w_bal/w_flex）+ 相对改进率终止
     + 收敛曲线记录。return_history=True 时返回 (best, history)。
+    return_trace=True 时返回 dict（schedule/history/iteration_log/operator_stats/
+    iterations/termination），供 SaaS 层展示 Gap 收敛过程与算子贡献度。
     """
     rng = random.Random(seed)
     n, m = data.n, data.m
@@ -188,6 +191,8 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
     iteration = 0
     accepted = 0
     history = []                       # 收敛曲线：(iter, best_λ目标, best_引导目标)
+    iteration_log = []                 # 迭代日志：改进全记 + 非改进每 50 轮采样
+    last_log_iter = 0
     checkpoint_fbest = f_best          # 相对改进率检查点
     checkpoint_iter = 0
 
@@ -275,6 +280,17 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
         if iteration % 10 == 0:
             history.append((iteration, _global_obj(best_metrics, lambda_), f_best))
 
+        # 迭代日志：改进事件全量记录；非改进每 50 轮采样（防内存/存储膨胀，
+        # 300s 预算可达 10^5 轮，全记不现实——D4 确认的采样密度）
+        if improved or iteration - last_log_iter >= 50:
+            iteration_log.append({
+                "iter": iteration,
+                "objective": _global_obj(best_metrics, lambda_),
+                "op": d_name,
+                "improved": improved,
+            })
+            last_log_iter = iteration
+
         # 相对改进率终止：仅当 imp_patience 显式设置时启用
         if imp_patience is not None and iteration - checkpoint_iter >= imp_patience:
             delta = abs(f_best - checkpoint_fbest) / max(abs(checkpoint_fbest), 1e-9)
@@ -288,6 +304,24 @@ def alns(data: DataModel, s0: Schedule, lambda_: tuple, time_limit: float,
         print(f"  [ALNS] iter={iteration} accepted={accepted} "
               f"makespan={best.makespan} ΣT={best.tardiness} ΣC={best.completion} "
               f"time={time.time()-t0:.2f}s")
+    if return_trace:
+        # 算子贡献度：命中率 = 该算子导致的改进次数 / 被选次数（轮盘赌自适应权重同源数据）
+        operator_stats = [
+            {"name": name, "uses": counts.get(name, 0),
+             "improvements": int(scores.get(name, 0)),
+             "hit_rate": round(scores.get(name, 0) / counts[name], 4)
+             if counts.get(name) else 0.0}
+            for name in ("random", "worst")
+        ]
+        termination = "cancelled" if (cancel is not None and cancel()) else "time_limit"
+        return {
+            "schedule": best,
+            "history": history,
+            "iteration_log": iteration_log,
+            "operator_stats": operator_stats,
+            "iterations": iteration,
+            "termination": termination,
+        }
     if return_history:
         return best, history
     return best

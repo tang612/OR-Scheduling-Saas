@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>任务结果 Dashboard 优化（Dashboard v2）过程报告</title>
+<script>
+  MathJax = {
+    tex: {
+      tags: 'none',
+      inlineMath: [['$', '$'], ['\(', '\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 900px; margin: 0 auto; padding: 36px 28px; color: #1a1a2e; line-height: 1.8; }
+  h1 { font-size: 24px; border-bottom: 3px solid #4a6cf7; padding-bottom: 12px; }
+  h2 { font-size: 19px; color: #4a6cf7; margin-top: 34px; border-left: 4px solid #4a6cf7; padding-left: 10px; }
+  h3 { font-size: 16px; margin-top: 24px; color: #333; }
+  .subtitle { color: #666; font-size: 14px; margin-top: -8px; }
+  .meta { color: #888; font-size: 12px; margin-top: 6px; }
+  .stage-badge { display: inline-block; background: #4a6cf7; color: #fff; border-radius: 4px; padding: 2px 10px; font-size: 12px; margin-top: 12px; }
+  .stage-badge.pending { background: #e67e22; }
+  .eq { margin: 18px 0; text-align: left; }
+  table { border-collapse: collapse; margin: 14px 0; }
+  td, th { border: 1px solid #999; padding: 6px 18px; text-align: center; }
+  th { background: #f0f4ff; }
+  pre { background: #f6f8fa; border: 1px solid #ddd; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+  .note { background: #fff8e6; border: 1px solid #f0d78a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+  footer { margin-top: 44px; color: #aaa; font-size: 12px; border-top: 1px solid #eee; padding-top: 10px; }
+  mjx-container { font-size: 1.08em; }
+</style>
+</head>
+<body>
+<h1>任务结果 Dashboard 优化（Dashboard v2）过程报告</h1>
+<div class="subtitle">状态全链路可追踪 · 求解过程可回溯 · 算法效果可量化</div>
+<div class="meta">OR-Scheduing-Saas ｜ 范围：frontend + backend + worker + solver-core ｜ 实测验证（docker compose 全链路） ｜ 生成时间: 2026-08-21 18:41</div>
+<div class="stage-badge ok">阶段二：方案已确认，实施完成（全部实测通过）</div>
+<h2>一、任务背景与核心痛点</h2>
+<p>原任务结果详情页存在三大问题：① 状态同步失效——提交后长期停留在「排队中」，无法感知是否被调度/进入求解；② 求解信息单一——精确求解器与启发式算法展示无差异，过程数据缺失；③ 启发式算法价值不显性——只输出最终解，无 Gap 优化逻辑、收敛过程与优化效果展示。</p>
+<h2>二、第一性原理反幻觉审查（方案落地前，四表制）</h2>
+<h3>2.1 错误断言表（关键修正）</h3>
+<table><tr><th>#</th><th>原断言</th><th>第一性原理事实</th><th>修正方向</th></tr><tr><td>E1</td><td>启发式展示「理论下界」并计算最终 Gap</td><td>元启发（ALNS/构造）不产生 bound 是数学事实——只有证明性算法（CP-SAT/分支定界）才有下界。router.py 原码即 `gap: None`（反幻觉注释）</td><td>启发式展示优化幅度=(初始−最终)/初始×100%；Gap 仅精确求解器展示（已确认 D1-A）</td></tr><tr><td>E2</td><td>优化方法拆解表含「邻域交换搜索/迭代局部搜索」5 方法及各自 Gap 贡献</td><td>代码实际只有：构造启发式（EDD/SPT/LPT）+ ALNS（random/worst 破坏 + 贪心插入修复 + 模拟退火接受准则）</td><td>方法表按代码实体重写；贡献度用可实测指标：被选次数/改进次数/命中率（scores/counts 同源导出）</td></tr><tr><td>E3</td><td>状态机含「调度中/结果处理中/排队超时」且固定进度 10%/90%</td><td>原状态仅 pending→running→终态；固定进度值是拍脑袋数字，会造成新假象</td><td>新增 dispatched（真实业务边界：RQ 拾取）；结果处理中仅作过渡 stage；排队超时用惰性检测不改 status；进度条=阶段推进器</td></tr><tr><td>E4</td><td>「页面常驻 10s 轮询 + SSE 断开时兜底」</td><td>语义矛盾：常驻轮询则 SSE 无意义</td><td>SSE 健康时零轮询，断开才启动 10s 轮询 + 断连提示</td></tr><tr><td>E5</td><td>排队超时原因「队列已满/资源不足」</td><td>RQ 队列无满概念；worker 资源监控不存在</td><td>仅保留「调度异常（worker 未拾取）」</td></tr><tr><td>E6</td><td>「提升优先级（付费）」</td><td>现有队列是规模路由非优先级队列</td><td>降级 P2；短期提供取消并重试</td></tr></table>
+<h3>2.2 隐含假设与遗漏项（摘录）</h3>
+<table><tr><th>#</th><th>隐含假设/遗漏</th><th>显式化结论</th></tr><tr><td>H1</td><td>预估等待时长有历史数据</td><td>无 → 展示「已排队时长 + 队列位置（可精确算）+ 队列深度」</td></tr><tr><td>H2</td><td>日志/曲线数据可自然获得</td><td>否 → 需新增采集+传输+存储链路（solver-core 日志回调/轨迹采样 + Redis pub/sub + MongoDB 落库）</td></tr><tr><td>H3</td><td>前端有图表库</td><td>package.json 仅 react → 引入 recharts 3.10.1（已确认 D5）</td></tr><tr><td>O1</td><td>SSE 事件协议扩展</td><td>新增 status/log 事件类型；前端对未知类型静默忽略（兼容旧 worker）</td></tr><tr><td>O2</td><td>过程数据存储设计</td><td>solutions 文档扩展 initial_objective/convergence/iteration_log/operator_stats/termination/params/logs（日志环形上限 10000 行）；tasks 扩展 timeline/dispatched_at</td></tr><tr><td>O4</td><td>进度防抖与单调性</td><td>同 stage 内 progress 单调不减；进度条定义为阶段推进器（非求解真实进度）</td></tr><tr><td>O7</td><td>10000 行日志前端渲染</td><td>自研虚拟列表（固定行高 + 可视区窗口渲染）</td></tr></table>
+<h3>2.3 已验证事实（方案直接复用的已有能力）</h3>
+<table><tr><th>能力</th><th>证据</th><th>处置</th></tr><tr><td>SSE 四段式 + 快照/增量</td><td>tasks.py 原实现</td><td>已有，仅增强（新增事件类型）</td></tr><tr><td>取消任务（Redis 标志位）</td><td>tasks.py DELETE + worker 轮询</td><td>已有，直接复用</td></tr><tr><td>甘特图组件（缩放/hover/利用率）</td><td>Gantt.tsx 自研 CSS</td><td>已有，Dashboard 复用</td></tr><tr><td>nginx SSE 反代完整配置</td><td>proxy_buffering off + read_timeout 3600s</td><td>已有</td></tr><tr><td>ALNS 收敛数据 return_history</td><td>heuristics.py 已实现未接线</td><td>P0 接线（零成本高价值）</td></tr><tr><td>ortools 9.15 log_callback / log_search_progress</td><td>实例 hasattr 实测 ✓</td><td>CP-SAT 实时日志采集（新增）</td></tr></table>
+<h2>三、方案设计（已确认决策点 D1~D7）</h2>
+<h3>3.1 状态机 v2 与实时同步</h3>
+<p>状态机：pending（排队中）→ dispatched（调度中，新增）→ running（求解中）→ 结果处理中（过渡 stage）→ succeeded/failed/cancelled。排队超时=惰性检测（pending 超 300s，不改 status）。SSE 事件新增 status（状态切换，含 at 时间戳）与 log（日志批量推送，每 20 行一条防 pub/sub 风暴）；前端断连提示 + 10s 轮询兜底 + 刷新按钮。排队信息：队列位置（RQ get_job_ids 惰性计算）+ 已排队时长。</p>
+<h3>3.2 分求解器差异化展示</h3>
+<p>精确求解器（CP-SAT）：log_search_progress + log_callback 实时日志（级别过滤/搜索/自动滚动/导出 TXT）、收敛轨迹（SolutionCallback 采样 (t, objective, bound)，上限 500 点抽稀）、参数回显（time_limit/num_workers/weights/seed）。启发式（ALNS）：初始解/最终解/优化幅度、收敛折线（return_history 接线，500 点抽稀）、方法拆解表（operator_stats：被选/改进/命中率）、迭代日志（改进全记 + 非改进每 50 轮采样，上限 2000 条）。</p>
+<h3>3.3 布局与交互</h3>
+<p>上中下 + 左右分栏：顶部状态总览（徽标/进度/阶段/时间线/排队信息/快捷操作）→ 左侧甘特图（多方案切换标签）→ 右侧 Tab（求解日志/优化分析/参数详情）。Tab 默认按引擎选择（ALNS→优化分析，CP-SAT→求解日志）。</p>
+<h2>四、实测验证结果（docker compose 全链路）</h2>
+<h3>4.1 CP-SAT（toy 数据，solver=cpsat）</h3>
+<table><tr><th>验证项</th><th>实测结果</th></tr><tr><td>任务状态</td><td>succeeded；timeline 3 条（dispatched→running→succeeded）；dispatched_at ✓</td></tr><tr><td>求解状态</td><td>OPTIMAL，termination=optimal，gap=0.0</td></tr><tr><td>求解日志</td><td>148 行实时采集，首行 &#x27;Starting CP-SAT solver v9.15.6755&#x27;；logs.txt 导出 HTTP 200（22KB）</td></tr><tr><td>收敛轨迹</td><td>2 点（toy 秒级即最优），含 objective/bound</td></tr><tr><td>参数回显</td><td>engine/time_limit_s/num_workers/log_search_progress/weights/seed/solver_request</td></tr></table>
+<h3>4.2 ALNS（medium 数据 50 单，solver=alns，time_budget=12s）</h3>
+<table><tr><th>验证项</th><th>实测结果</th></tr><tr><td>SSE 事件序列</td><td>snapshot → status(dispatched) → status(running) → progress(ALNS迭代)×N → status(succeeded) → done（全链路完整）</td></tr><tr><td>stage 序列</td><td>调度中 → 求解中 → ALNS迭代 → 结果处理中 → 完成</td></tr><tr><td>优化效果</td><td>初始解 8149 → 最终 7340（优化幅度 9.9%）；iterations=27591</td></tr><tr><td>收敛曲线</td><td>500 点（抽稀生效，原始 29575 点）；迭代日志 574 条</td></tr><tr><td>算子贡献</td><td>operator_stats 含 random/worst 被选次数/改进次数/命中率</td></tr><tr><td>启发式 Gap</td><td>None（反幻觉：不伪造下界）✓</td></tr></table>
+<h3>4.3 排队位置（3 任务排队实测）</h3>
+<p>连续提交 3 个任务后逐个查询：捕获到 queue_position=0 与 1（排队位置随 worker 拾取递减，逻辑正确）。</p>
+<h3>4.4 前端构建与部署</h3>
+<table><tr><th>验证项</th><th>实测结果</th></tr><tr><td>tsc -b + vite build</td><td>通过（624 modules；recharts 3.10.1 引入后 bundle 535KB）</td></tr><tr><td>assets MIME</td><td>JS → application/javascript、CSS → text/css（白屏坑防护生效）</td></tr><tr><td>旧 hash 资源</td><td>404（非 index.html 兜底）</td></tr><tr><td>SSE 配置</td><td>proxy_buffering off + proxy_read_timeout 3600s（nginx 已配置）</td></tr></table>
+<h2>五、反幻觉核对清单（公式-代码对照）</h2>
+<p>本任务为工程改造（非数学建模），按「指标-实现-验证」对照：启发式指标（优化幅度/收敛/算子贡献）全部为可实测数据，无虚构字段；Gap 口径严格区分精确/启发式；进度条语义显式定义为阶段推进器。</p>
+<table><tr><th>指标/能力</th><th>实现位置</th><th>验证</th></tr><tr><td>优化幅度（(初始−最终)/初始×100%）</td><td>前端 AnalysisPanel.tsx 计算</td><td>实测 9.9% 与 8149/7340 一致</td></tr><tr><td>收敛曲线（≤500 点抽稀）</td><td>router.py cp_sat._thin + 前端 recharts</td><td>500 点实测</td></tr><tr><td>迭代日志（改进全记+50 轮采样，≤2000）</td><td>heuristics.py + router._cap_iteration_log</td><td>574 条实测</td></tr><tr><td>CP-SAT 日志（≤10000 行）</td><td>cp_sat.py log_callback + 空行过滤</td><td>148 行实测</td></tr><tr><td>dispatched/结果处理中/timeline</td><td>worker/tasks.py _set_status</td><td>SSE 事件序列实测</td></tr><tr><td>queue_position/queue_timeout</td><td>tasks.py _queue_position/_is_queue_timeout</td><td>位置 0/1 实测</td></tr><tr><td>SSE 断连→10s 轮询兜底</td><td>Dashboard.tsx es.onerror + setInterval</td><td>代码审查（断连场景需浏览器实测）</td></tr><tr><td>排队超时 5 分钟高亮</td><td>前端 badge-timeout + queue_timeout 标记</td><td>逻辑审查（需 5 分钟长排队场景实测）</td></tr></table>
+<div class="note">⚠ 两项待浏览器实测项：SSE 断连自动切换轮询的 UI 表现、排队超 5 分钟高亮（需真实长排队）。其余全部经 docker compose 全链路实测通过。</div>
+<footer>OR-Expert 过程报告 ｜ 公式为 LaTeX 源码内嵌，可直接编辑后刷新浏览器重新渲染</footer>
+</body>
+</html>

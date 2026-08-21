@@ -28,3 +28,18 @@ export async function api(method: string, path: string, body?: unknown): Promise
   }
   return data
 }
+
+/** 带鉴权的文件下载（fetch blob → 触发浏览器下载，日志导出用）。 */
+export async function downloadText(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const resp = await fetch(BASE + path, { headers })
+  if (!resp.ok) throw new Error(`下载失败（${resp.status}）`)
+  const blob = await resp.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}

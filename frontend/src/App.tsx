@@ -1,37 +1,12 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { api, setToken, getToken } from './api'
-import Gantt from './Gantt'
+import Dashboard from './Dashboard'
+import type { Task } from './types'
 
-interface Task {
-  id: string
-  name: string
-  status: string
-  progress: number
-  stage: string
-  solver?: string
-  objective?: { makespan?: number; tardiness?: number; completion?: number; total?: number }
-  dataset_id: string
-  created_at: string
-  finished_at?: string
-}
 interface Dataset { id: string; name: string; num_orders: number; num_machines: number; num_recipes: number }
-interface Solution {
-  id: string; task_id: string; engine: string; status: string
-  objective: { makespan?: number; tardiness?: number; completion?: number; total?: number }
-  gap?: number; solve_time_s: number
-}
-interface GanttData { machines: any[]; jobs: any[]; setup: any[]; meta: any }
 
-const STAGES = ['排队中', '求解中', '完成']
 const DS_FIELDS = ['machines', 'orders', 'recipes', 'switch_matrix']
 const TEMPLATE_KEY = 'dataset_template'
-
-function stageInfo(status: string): { index: number; error: boolean } {
-  if (status === 'pending') return { index: 0, error: false }
-  if (status === 'running') return { index: 1, error: false }
-  if (status === 'succeeded') return { index: 2, error: false }
-  return { index: 1, error: true } // failed / cancelled
-}
 
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken())
@@ -60,13 +35,10 @@ export default function App() {
   const [dsName, setDsName] = useState('')
   const [dsJson, setDsJson] = useState('')
   const [dsError, setDsError] = useState('')
+  const [dragOver, setDragOver] = useState(false)
 
   // 详情
   const [currentTask, setCurrentTask] = useState<Task | null>(null)
-  const [solutions, setSolutions] = useState<Solution[]>([])
-  const [gantt, setGantt] = useState<GanttData | null>(null)
-  const [activeSol, setActiveSol] = useState<string>('')
-  const esRef = useRef<EventSource | null>(null)
 
   const loadTasks = useCallback(async () => {
     setLoading(true)
@@ -107,6 +79,55 @@ export default function App() {
     }
   }
 
+  const readFileText = (f: File) => new Promise<string>((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result as string)
+    r.onerror = () => reject(new Error('读取失败：' + f.name))
+    r.readAsText(f)
+  })
+
+  const handleFiles = async (files: FileList | File[]) => {
+    setError(''); setInfo('')
+    const list = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.json'))
+    if (list.length === 0) { setError('请拖入 .json 文件'); return }
+    try {
+      if (list.length === 1) {
+        // 单个文件：合并格式（含 machines/orders/recipes/switch_matrix 四字段）
+        const text = await readFileText(list[0])
+        const d = JSON.parse(text)
+        if (d.machines && d.orders && d.recipes && d.switch_matrix) {
+          onDsJsonChange(JSON.stringify(d, null, 2))
+          if (!dsName.trim()) setDsName(list[0].name.replace(/\.json$/i, ''))
+          setInfo('已导入：' + list[0].name)
+        } else {
+          setError('文件需含 machines/orders/recipes/switch_matrix 四字段（合并格式）')
+        }
+      } else {
+        // 多文件：按文件名匹配 machines/orders/recipes/switch_matrix 自动合并
+        const merged: Record<string, unknown> = {}
+        for (const f of list) {
+          const text = await readFileText(f)
+          const d = JSON.parse(text)
+          const base = f.name.replace(/\.json$/i, '').toLowerCase()
+          if (base === 'machines' || base === 'orders' || base === 'recipes' || base === 'switch_matrix') {
+            merged[base] = d
+          } else if (base !== 'metadata') {
+            merged[base] = d
+          }
+        }
+        if (merged.machines && merged.orders && merged.recipes && merged.switch_matrix) {
+          onDsJsonChange(JSON.stringify(merged, null, 2))
+          if (!dsName.trim()) setDsName('导入数据集')
+          setInfo(`已导入 ${list.length} 个文件并自动合并`)
+        } else {
+          setError('多文件需包含 machines.json / orders.json / recipes.json / switch_matrix.json')
+        }
+      }
+    } catch (e: any) {
+      setError('文件解析失败：' + e.message)
+    }
+  }
+
   const saveTemplate = () => {
     if (dsError) { setError('JSON 校验未通过，无法保存模板'); return }
     if (!dsJson.trim()) { setError('请先输入数据集 JSON'); return }
@@ -142,60 +163,13 @@ export default function App() {
       if (timeBudget) cfg.time_budget = Number(timeBudget)
       const r = await api('POST', '/tasks', { name: taskName, dataset_id: datasetId, config: cfg })
       setInfo(`任务已提交（${r.id}）`)
-      setView('detail'); setCurrentTask(r); setSolutions([]); setGantt(null)
+      setView('detail'); setCurrentTask(r)
     } catch (e: any) { setError(e.message) }
   }
 
   const openTask = (t: Task) => {
-    setView('detail'); setCurrentTask(t); setSolutions([]); setGantt(null); setActiveSol('')
+    setView('detail'); setCurrentTask(t)
   }
-
-  const loadSolution = async (sid: string) => {
-    try {
-      const r = await api('GET', `/solutions/${sid}`)
-      setGantt(r.gantt)
-      setActiveSol(sid)
-    } catch (e: any) { setError(e.message) }
-  }
-
-  const cancelTask = async () => {
-    if (!currentTask) return
-    if (!window.confirm('确认取消该任务？正在求解的任务将被终止。')) return
-    setError(''); setInfo('')
-    try {
-      await api('DELETE', `/tasks/${currentTask.id}`)
-      setInfo('任务已取消')
-      const t = await api('GET', `/tasks/${currentTask.id}`)
-      setCurrentTask(t)
-      loadTasks()
-    } catch (e: any) { setError(e.message) }
-  }
-
-  // 详情页：SSE 实时进度 + 拉取方案
-  useEffect(() => {
-    if (view !== 'detail' || !currentTask) return
-    if (currentTask.status === 'succeeded' || currentTask.status === 'failed' || currentTask.status === 'cancelled') {
-      api('GET', `/tasks/${currentTask.id}/solutions`).then(setSolutions).catch(() => {})
-      return
-    }
-    esRef.current?.close()
-    const es = new EventSource(`/api/v1/tasks/${currentTask.id}/events`)
-    esRef.current = es
-    es.onmessage = (ev) => {
-      try {
-        const d = JSON.parse(ev.data)
-        if (d.type === 'snapshot' || d.type === 'progress') {
-          setCurrentTask((p) => (p ? { ...p, progress: d.percent ?? p.progress, stage: d.stage ?? p.stage, status: d.status ?? p.status } : p))
-        }
-        if (d.type === 'done' || d.type === 'failed' || d.type === 'cancelled') {
-          api('GET', `/tasks/${currentTask.id}`).then((t) => { setCurrentTask(t) }).catch(() => {})
-          api('GET', `/tasks/${currentTask.id}/solutions`).then(setSolutions).catch(() => {})
-          es.close()
-        }
-      } catch { /* ignore */ }
-    }
-    return () => es.close()
-  }, [view, currentTask?.id])
 
   if (!authed) {
     return (
@@ -270,7 +244,20 @@ export default function App() {
             <div className="row">
               <div><label>数据集名称</label><input value={dsName} onChange={(e) => setDsName(e.target.value)} placeholder="周二排程" /></div>
             </div>
-            <label>五 JSON 合并（machines / orders / recipes / switch_matrix）</label>
+            <div
+              className={`drop-zone ${dragOver ? 'dragover' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
+            >
+              <span className="drop-zone-icon">📁</span>
+              <div>拖拽 JSON 文件到此处（支持合并格式单文件，或 machines/orders/recipes/switch_matrix 多文件自动合并）</div>
+              <label className="btn secondary small" style={{ marginTop: 8, cursor: 'pointer', display: 'inline-block' }}>
+                选择文件
+                <input type="file" accept=".json,application/json" multiple hidden onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }} />
+              </label>
+            </div>
+            <label>JSON 内容（拖拽/上传后自动填充，也可直接粘贴）</label>
             <textarea
               rows={8}
               value={dsJson}
@@ -317,70 +304,12 @@ export default function App() {
       )}
 
       {view === 'detail' && currentTask && (
-        <div className="card">
-          <div className="row" style={{ marginBottom: 12 }}>
-            <h3 style={{ margin: 0, flex: 2 }}>任务详情：{currentTask.name}</h3>
-            {(currentTask.status === 'pending' || currentTask.status === 'running') && (
-              <button className="btn danger small" onClick={cancelTask}>取消任务</button>
-            )}
-          </div>
-
-          {/* 分阶段进度步骤条 */}
-          {(() => {
-            const st = stageInfo(currentTask.status)
-            return (
-              <div className="steps">
-                {STAGES.map((s, i) => (
-                  <Fragment key={s}>
-                    {i > 0 && <div className={`step-line ${i <= st.index || st.error ? 'done' : ''}`} />}
-                    <div className={`step ${i < st.index ? 'done' : i === st.index ? (st.error ? 'error' : 'active') : ''}`}>
-                      <span className="dot">{i < st.index ? '✓' : st.error && i === st.index ? '!' : i + 1}</span>
-                      {s}
-                    </div>
-                  </Fragment>
-                ))}
-              </div>
-            )
-          })()}
-
-          <div className="row" style={{ marginBottom: 12 }}>
-            <div><span className={`badge ${currentTask.status}`}>{currentTask.status}</span></div>
-            <div>阶段：{currentTask.stage || '-'}</div>
-            <div style={{ flex: 2 }}>
-              <div className="progress-bar"><div className="progress-fill" style={{ width: `${(currentTask.progress || 0) * 100}%` }} /></div>
-            </div>
-            <div>{Math.round((currentTask.progress || 0) * 100)}%</div>
-          </div>
-          {currentTask.objective && (
-            <div style={{ fontSize: 13, color: '#555', marginBottom: 12 }}>
-              目标：makespan={currentTask.objective.makespan ?? '-'} · ΣT={currentTask.objective.tardiness ?? '-'} · ΣC={currentTask.objective.completion ?? '-'}
-            </div>
-          )}
-
-          {solutions.length > 0 && (
-            <>
-              <h4>方案对比（{solutions.length}）</h4>
-              <table>
-                <thead><tr><th>引擎</th><th>状态</th><th>makespan</th><th>ΣT</th><th>ΣC</th><th>gap</th><th>耗时</th><th>甘特图</th></tr></thead>
-                <tbody>
-                  {solutions.map((s) => (
-                    <tr key={s.id} style={{ background: s.id === activeSol ? '#eef2ff' : 'transparent' }}>
-                      <td>{s.engine}</td>
-                      <td>{s.status}</td>
-                      <td>{s.objective.makespan ?? '-'}</td>
-                      <td>{s.objective.tardiness ?? '-'}</td>
-                      <td>{s.objective.completion ?? '-'}</td>
-                      <td>{s.gap != null ? s.gap.toFixed(3) : '-'}</td>
-                      <td>{s.solve_time_s.toFixed(2)}s</td>
-                      <td><button className="btn secondary small" onClick={() => loadSolution(s.id)}>查看</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {gantt && <div style={{ marginTop: 16 }}><h4>甘特图（{gantt.meta.solver}）</h4><Gantt data={gantt} /></div>}
-            </>
-          )}
-        </div>
+        <Dashboard
+          task={currentTask}
+          onTaskUpdate={setCurrentTask}
+          onBack={() => { setView('tasks'); loadTasks() }}
+          onTasksChanged={loadTasks}
+        />
       )}
     </div>
   )

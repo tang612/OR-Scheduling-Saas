@@ -74,6 +74,14 @@ def _to_out(s: dict) -> SolutionOut:
         id=str(s["_id"]), task_id=str(s["task_id"]), engine=s["engine"],
         status=s["status"], objective=s["objective"], gap=s.get("gap"),
         solve_time_s=s.get("solve_time_s", 0.0), created_at=s["created_at"],
+        # Dashboard v2 过程数据透传
+        initial_objective=s.get("initial_objective"),
+        convergence=s.get("convergence") or [],
+        iterations=s.get("iterations"),
+        operator_stats=s.get("operator_stats") or [],
+        iteration_log=s.get("iteration_log") or [],
+        termination=s.get("termination"),
+        params=s.get("params"),
     )
 
 
@@ -107,4 +115,5 @@ def get_solution(
     dataset = cols["datasets"].find_one({"_id": task["dataset_id"]})
     out = _to_out(s).model_dump()
     out["gantt"] = _build_gantt(s, dataset)
+    out["logs"] = s.get("logs") or []   # 全量求解日志（上限 10000 行）
     return out

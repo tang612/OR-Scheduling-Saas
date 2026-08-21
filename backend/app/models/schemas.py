@@ -124,7 +124,11 @@ class TaskOut(BaseModel):
     objective: Optional[dict] = None
     error: Optional[dict] = None
     created_at: datetime
+    dispatched_at: Optional[datetime] = None   # Dashboard v2：调度中状态时间点
     finished_at: Optional[datetime] = None
+    queue_position: Optional[int] = None       # 排队中：队列位置（GET 时惰性计算）
+    queue_timeout: bool = False                # 排队超时标记（pending 超阈值）
+    timeline: list[dict] = []                  # 状态时间线 [{status, stage, at}]
 
 
 class SolutionOut(BaseModel):
@@ -136,3 +140,12 @@ class SolutionOut(BaseModel):
     gap: Optional[float] = None
     solve_time_s: float
     created_at: datetime
+    # Dashboard v2：求解过程数据（启发式：初始解/收敛曲线/迭代日志/算子贡献；
+    # 精确：收敛轨迹/终止原因/参数回显）
+    initial_objective: Optional[dict] = None
+    convergence: list[dict] = []
+    iterations: Optional[int] = None
+    operator_stats: list[dict] = []
+    iteration_log: list[dict] = []
+    termination: Optional[str] = None
+    params: Optional[dict] = None

@@ -142,3 +142,129 @@ th { color: var(--text-sub); font-weight: 500; }
 /* ---- 工具栏 ---- */
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .toolbar .hint { font-size: 12px; color: #999; }
+
+/* ---- 拖拽上传区 ---- */
+.drop-zone {
+  border: 2px dashed #c5c9d6; border-radius: 8px; padding: 20px;
+  text-align: center; color: #888; font-size: 13px;
+  margin-bottom: 12px; transition: all .15s; background: #fafbfd;
+}
+.drop-zone.dragover { border-color: var(--primary); background: #eef2ff; color: var(--primary); }
+.drop-zone-icon { font-size: 32px; display: block; margin-bottom: 6px; }
+
+/* ================= Dashboard v2（任务结果详情页） ================= */
+/* 状态徽标：新增 dispatched + 排队超时 */
+.badge.dispatched { background: #cce5ff; color: #004085; }
+.badge-timeout { background: #f8d7da !important; color: #721c24 !important; font-weight: 600; }
+
+/* SSE 连接提示条 */
+.sse-warn {
+  background: #fff8e1; border: 1px solid #ffe082; color: #8a6d00;
+  font-size: 13px; padding: 6px 12px; border-radius: 6px; margin-bottom: 10px;
+}
+.sse-warn.warn-yellow { background: #fff3cd; border-color: #ffc107; color: #856404; }
+
+/* 顶部状态总览 */
+.dash-overview {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+}
+.dash-overview .badge { font-size: 13px; padding: 4px 12px; }
+.dash-pct { font-size: 14px; font-weight: 600; min-width: 42px; text-align: right; }
+.dash-stage { font-size: 13px; color: var(--text-sub); }
+.dash-obj { font-size: 13px; color: #555; margin-bottom: 8px; }
+
+/* 排队信息 */
+.queue-info { font-size: 13px; color: #555; background: #f8f9fc; border-radius: 6px; padding: 6px 12px; margin-bottom: 10px; }
+.queue-info.warn { background: #fff3cd; color: #856404; border: 1px solid #ffe082; }
+
+/* 状态时间线 */
+.timeline { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e8eaf0; }
+.tl-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
+.tl-dot { width: 8px; height: 8px; border-radius: 50%; background: #c0c4d0; }
+.tl-dot.dispatched, .tl-dot.running { background: var(--primary); }
+.tl-dot.succeeded { background: var(--success); }
+.tl-dot.failed { background: var(--danger); }
+.tl-dot.cancelled { background: #95a5a6; }
+.tl-status { font-weight: 600; }
+.tl-stage { color: #999; }
+.tl-at { color: #bbb; font-size: 11px; }
+
+/* 主体双栏布局 */
+.dash-body { display: flex; gap: 16px; align-items: flex-start; }
+.dash-left { flex: 3; min-width: 0; }
+.dash-right { flex: 2; min-width: 0; }
+
+/* 方案切换（多引擎对比） */
+.sol-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.sol-tab {
+  padding: 4px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #d0d3dc;
+  background: #fff; color: #555; cursor: pointer;
+}
+.sol-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* Tab 栏 */
+.tabs { display: flex; border-bottom: 2px solid #eef0f5; margin-bottom: 12px; gap: 4px; }
+.tab-btn {
+  padding: 8px 14px; font-size: 13px; border: none; background: none; cursor: pointer;
+  color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+.tab-btn.active { color: var(--primary); font-weight: 600; border-bottom-color: var(--primary); }
+.tab-body { min-height: 320px; }
+
+/* ---- 日志面板 ---- */
+.log-toolbar { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.log-filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.log-filters .btn.active { background: var(--primary); color: #fff; }
+.log-count { margin-left: 4px; font-size: 11px; opacity: .75; }
+.log-actions { display: flex; gap: 6px; align-items: center; }
+.log-search { width: 180px; margin: 0; padding: 5px 8px; font-size: 12px; }
+.log-virtual {
+  overflow-y: auto; border: 1px solid #eef0f5; border-radius: 6px;
+  background: #0f1420; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; line-height: 20px; position: relative;
+}
+.log-row { display: flex; align-items: center; padding: 0 8px; white-space: pre; overflow: hidden; text-overflow: ellipsis; color: #c8ccd8; }
+.log-row.lv-error { color: #ff6b6b; background: rgba(231,76,60,.08); }
+.log-row.lv-warning { color: #ffc107; }
+.log-level { width: 14px; flex-shrink: 0; font-weight: 700; }
+.log-level + .log-line { margin-left: 6px; }
+.lv-info .log-level { color: #6c8cff; }
+.lv-warning .log-level { color: #ffc107; }
+.lv-error .log-level { color: #ff6b6b; }
+.log-line { overflow: hidden; text-overflow: ellipsis; }
+.log-line mark { background: #ffe082; color: #333; border-radius: 2px; }
+.go-latest { position: absolute; right: 28px; margin-top: -56px; z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.log-meta { font-size: 11px; color: #999; margin-top: 6px; }
+.live-dot { color: var(--success); animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+
+/* ---- 优化分析 ---- */
+.chart-box { margin-bottom: 14px; }
+.milestones { margin: 10px 0; }
+.milestone { font-size: 12px; color: #555; padding: 4px 0; display: flex; gap: 8px; align-items: center; }
+.ms-dot {
+  width: 18px; height: 18px; border-radius: 50%; background: var(--primary); color: #fff;
+  font-size: 11px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.op-desc { font-size: 12px; color: #777; }
+.iter-log { max-height: 300px; overflow-y: auto; border: 1px solid #eef0f5; border-radius: 6px; margin-bottom: 10px; }
+.iter-row {
+  display: flex; gap: 12px; padding: 4px 10px; font-size: 12px; color: #555;
+  border-bottom: 1px solid #f4f6fb; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.iter-row.improved { background: #eafaf1; color: #155724; }
+.iter-no { color: #999; min-width: 64px; }
+.iter-obj { flex: 1; }
+.iter-op { color: #777; min-width: 80px; }
+.iter-badge { font-weight: 700; }
+.result-note {
+  background: #f0f4ff; border-left: 3px solid var(--primary); padding: 10px 14px;
+  font-size: 13px; color: #33415c; border-radius: 0 6px 6px 0; margin-top: 14px; line-height: 1.7;
+}
+.empty-mini { color: #999; font-size: 13px; text-align: center; padding: 32px 12px; }
+
+/* ---- 参数详情 ---- */
+.params-panel h5 { margin: 14px 0 8px; }
+.params-panel h5:first-child { margin-top: 0; }
+.kv td { font-size: 13px; padding: 6px 10px; }
+.kv .kv-k { color: var(--text-sub); width: 130px; }

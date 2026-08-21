@@ -12,9 +12,23 @@ from ortools.sat.python import cp_model
 from .model import DataModel, evaluate
 
 
+def _thin(points: list, cap: int = 500):
+    """等间隔抽稀（保留首尾），防止超长轨迹撑爆前端渲染。"""
+    if len(points) <= cap:
+        return points
+    step = len(points) / cap
+    out = [points[int(i * step)] for i in range(cap - 1)]
+    out.append(points[-1])
+    return out
+
+
 def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None,
-                  progress_cb=None, cancel=None):
-    """构建并求解 CP-SAT 模型，返回 (status, Schedule, objective, gap)。"""
+                  progress_cb=None, cancel=None, log_cb=None):
+    """构建并求解 CP-SAT 模型，返回 (status, Schedule, objective, gap, wall, trace)。
+
+    trace = {convergence: [(t, obj, bound)], logs: [...], termination, params}，
+    供 Dashboard 求解日志面板 / 收敛曲线 / 参数回显使用。
+    """
     model = cp_model.CpModel()
     n, m = data.n, data.m
     horizon = max(1, data.horizon_ub())
@@ -115,26 +129,66 @@ def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None,
     if time_limit is not None:
         solver.parameters.max_time_in_seconds = time_limit
     solver.parameters.num_workers = 8
+    solver.parameters.log_search_progress = True   # Dashboard 求解日志面板数据源
+
+    # 日志采集：环形上限 10000 行（防大模型日志爆炸）；log_cb 用于实时流式推送（SSE）
+    MAX_LOG_LINES = 10000
+    log_lines: list[str] = []
+
+    def _log(line: str) -> None:
+        line = line.rstrip()
+        if not line:
+            return
+        if len(log_lines) < MAX_LOG_LINES:
+            log_lines.append(line)
+        if log_cb is not None:
+            log_cb(line)
+
+    solver.log_callback = _log
 
     if progress_cb:
         progress_cb(0.3, "CP-SAT求解")
     t0 = time.time()
-    if cancel is not None:
-        class _CancelCb(cp_model.CpSolverSolutionCallback):
-            def __init__(self, fn):
-                super().__init__()
-                self._fn = fn
 
-            def on_solution_callback(self):
-                if self._fn():
-                    self.StopSearch()
-        status = solver.Solve(model, _CancelCb(cancel))
-    else:
-        status = solver.Solve(model)
+    # 统一带 SolutionCallback：收集收敛轨迹（首次可行解/最优解更新时间、bound 下降）
+    trace_pts: list[tuple] = []   # (walltime, objective, bound)
+    cancelled = False
+
+    class _TraceCb(cp_model.CpSolverSolutionCallback):
+        def __init__(self, fn):
+            super().__init__()
+            self._fn = fn
+            self.cancelled = False
+
+        def on_solution_callback(self):
+            trace_pts.append((self.WallTime(), self.ObjectiveValue(),
+                              self.BestObjectiveBound()))
+            if self._fn is not None and self._fn():
+                self.cancelled = True
+                self.StopSearch()
+
+    cb = _TraceCb(cancel)
+    status = solver.Solve(model, cb)
+    cancelled = cb.cancelled
     wall = time.time() - t0
 
+    # 终止原因 + 参数回显（Dashboard 参数详情页）
+    if status == cp_model.OPTIMAL:
+        termination = "optimal"
+    elif status == cp_model.FEASIBLE:
+        termination = "cancelled" if cancelled else "time_limit"
+    elif status == cp_model.INFEASIBLE:
+        termination = "infeasible"
+    else:
+        termination = "unknown"
+    params = {"engine": "CP-SAT", "time_limit_s": time_limit, "num_workers": 8,
+              "log_search_progress": True}
+
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return status, None, None, None, wall
+        return status, None, None, None, wall, {
+            "convergence": [], "logs": log_lines, "termination": termination,
+            "params": params,
+        }
 
     # 提取解
     assignment = [0] * n
@@ -166,18 +220,26 @@ def _solve_cp_sat(data: DataModel, lambda_: tuple, time_limit: float | None,
         if obj_val > 0:
             gap = abs(obj_val - best_bound) / max(1.0, abs(obj_val))
 
-    return status, sched, obj, gap, wall
+    return status, sched, obj, gap, wall, {
+        "convergence": [{"t": round(t, 3), "objective": round(o, 2), "bound": round(b, 2)}
+                        for t, o, b in _thin(trace_pts)],
+        "logs": log_lines,
+        "termination": termination,
+        "params": params,
+    }
 
 
 def solve(data: DataModel, lambda_: tuple, time_limit: float | None = None,
-          verbose: bool = True, progress_cb=None, cancel=None):
+          verbose: bool = True, progress_cb=None, cancel=None,
+          log_cb=None):
     """CP-SAT 精确求解入口。返回 dict。
 
     progress_cb(percent, stage)：进度回调（可选）。
     cancel() -> bool：取消检查（可选，返回 True 则软停止并返回当前最优解）。
+    log_cb(line: str)：求解日志行回调（可选，实时流式）。
     """
-    status, sched, obj_expr, gap, wall = _solve_cp_sat(
-        data, lambda_, time_limit, progress_cb, cancel)
+    status, sched, obj_expr, gap, wall, trace = _solve_cp_sat(
+        data, lambda_, time_limit, progress_cb, cancel, log_cb)
     status_name = {
         cp_model.OPTIMAL: "OPTIMAL",
         cp_model.FEASIBLE: "FEASIBLE",
@@ -191,6 +253,8 @@ def solve(data: DataModel, lambda_: tuple, time_limit: float | None = None,
             "status": status_name, "schedule": None,
             "makespan": None, "tardiness": None, "completion": None,
             "objective": None, "gap": gap, "solve_time_s": wall,
+            "convergence": trace["convergence"], "logs": trace["logs"],
+            "termination": trace["termination"], "params": trace["params"],
         }
 
     if verbose:
@@ -207,4 +271,6 @@ def solve(data: DataModel, lambda_: tuple, time_limit: float | None = None,
         "objective": (lambda_[0] * sched.makespan + lambda_[1] * sched.tardiness
                       + lambda_[2] * sched.completion),
         "gap": gap, "solve_time_s": wall,
+        "convergence": trace["convergence"], "logs": trace["logs"],
+        "termination": trace["termination"], "params": trace["params"],
     }
