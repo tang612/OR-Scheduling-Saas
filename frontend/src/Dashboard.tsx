@@ -40,7 +40,6 @@ export default function Dashboard({
   const [refreshHint, setRefreshHint] = useState(false)
   const esRef = useRef<EventSource | null>(null)
   const pollRef = useRef<number | null>(null)
-  const fetchedLogsRef = useRef(false)
 
   const isDone = TERMINAL.includes(task.status)
   const isHeur = (s: Solution) => s.engine.includes('ALNS') || s.engine.includes('启发')
@@ -138,18 +137,34 @@ export default function Dashboard({
     const sols = (await api('GET', `/tasks/${task.id}/solutions`).catch(() => [])) as Solution[]
     setSolutions(sols)
     if (sols.length > 0 && !activeSol) await loadSolution(sols[0].id)
-    // 精确求解器：拉详情全量日志（补 SSE 实时推送遗漏）
-    if (!fetchedLogsRef.current) {
-      fetchedLogsRef.current = true
-      for (const s of sols) {
-        if (!isHeur(s)) {
-          const r = await api('GET', `/solutions/${s.id}`).catch(() => null)
-          if (r?.logs?.length) setLogs(r.logs)
-        }
+    // 精确求解器：拉详情全量日志（补 SSE 实时推送遗漏；幂等——重复 GET 无害）
+    for (const s of sols) {
+      if (!isHeur(s)) {
+        const r = await api('GET', `/solutions/${s.id}`).catch(() => null)
+        if (r?.logs?.length) setLogs(r.logs)
       }
     }
     if (d?.type === 'failed') setError(`求解失败：${d.error?.msg || '未知错误'}`)
   }
+
+  // ---- 方案/日志拉取兜底（修复：终态任务无 SSE 事件时可视化与日志不显示）----
+  // ① 挂载/切换任务：总是拉一次现有方案（覆盖直接打开已完成任务 / 刷新详情页）
+  useEffect(() => {
+    refreshAfterFinish(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id])
+
+  // ② 状态从未终态 → 终态：SSE done 事件已触发刷新，但「秒级完成任务」时
+  //    snapshot 直接携带终态（无 done 事件可依赖），此处兜底补拉
+  const prevStatusRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = task.status
+    if (prev !== null && !TERMINAL.includes(prev) && TERMINAL.includes(task.status)) {
+      refreshAfterFinish(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.status])
 
   const cancelTask = async () => {
     if (!window.confirm('确认取消该任务？正在求解的任务将被终止。')) return
