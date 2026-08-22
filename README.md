@@ -2,7 +2,6 @@
 
 多机台智能排产 / 调度 SaaS（手术排程方向），求解内核基于 OR-Tools CP-SAT 精确求解 + 自研构造/ALNS 元启发 + 规模自动路由。
 
-> **目录拼写说明**：开发工作区目录名为 `OR-Scheduing-Saas`（历史拼写错误，沿用）；交付 Git 仓库为 `OR-Scheduling-Saas`（正确拼写）。项目正式名称为 **OR-Scheduling-SaaS**。
 
 ---
 
