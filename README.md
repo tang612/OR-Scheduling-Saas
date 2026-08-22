@@ -9,10 +9,12 @@
 
 | 对话 | 职责 | 对应提交 | 产出 | 状态 |
 |---|---|---|---|---|
-| 1. 人格自举 + skill | OR-Expert 人格常驻 + 自举迭代（V2.1→V3.3，5 轮闭环） | 贯穿全程；V3.3 正式回写于交付整理轮（`8488840`） | `.hermes.md` + `personality-deploy/OR-Expert/`（SKILL.md v1.4.0 + references/v3-full.md V3.3）+ `docs/bootstrap-log.md`（5 轮自举日志）+ `docs/anti-hallucination-checklist.md` + `skills/`（开发/变更/调试三条流水线） | ✅ 完成 |
-| 2. 算法开发 | 建模 + 求解 + 五层测试（L1~L5）+ 算法迭代 | `315563d` ~ `2b8f6f6` | `solver-core/`（model/cp_sat/heuristics/router/evaluation/visualize）+ `tests/unit/test_scheduler.py`（17/17 通过）+ `scripts/`（run_tests/run_scheduler/run_l5/run_iteration）+ `docs/algorithm_design.md` + `docs/test_reports/`（L1~L4）+ `docs/test-reports/`（L5 massive） | ✅ 完成 |
-| 3. SaaS 工程化 | 工程化 + API + 多租户 + 异步求解 + 前端 + Dashboard 迭代 | `07a0045` ~ `d9d950b` | `backend/`（auth/datasets/tasks/solutions + 限流/TLS/监控）+ `worker/` + `frontend/`（Dashboard v2：状态机/SSE/甘特图/日志/分析面板）+ `deploy/`（compose + k8s）+ `docs/user-guide.md` + `docs/Dashboard_v2_过程报告.html` | ✅ 完成 |
-| 4. 交付物整理与评审 | 交付物清单补齐（11 项）+ 文档评审索引 + V3.3 自举闭环回写 | `8488840` | `docs/PRD.md` + `docs/技术方案.md` + `docs/personality/运筹优化工程师-V3.3-最终版.md` + README §交付物清单 | ✅ 完成 |
+| 1. 人格定义编写 | 运筹优化工程师人格 V2.1 → V3.0 文档编写与迭代 | 初始阶段（`315563d` 之前） | 《运筹优化工程师（Hermes Agent 完整人格定义 V3.0）》`.md/.docx`（根目录）+ `docs/personality/运筹优化工程师-V3.0.md`（基线） | ✅ 完成 |
+| 2. 人格自举 + skill | 人格部署 + 自举迭代（V3.0→V3.3，5 轮闭环）+ 流水线 Skill | 贯穿全程；V3.3 正式回写于交付整理轮（`8488840`） | `.hermes.md` + `personality-deploy/OR-Expert/`（SKILL.md v1.4.0 + references/v3-full.md V3.3）+ `docs/bootstrap-log.md`（5 轮自举日志）+ `docs/anti-hallucination-checklist.md` + `skills/`（开发/变更/调试三条流水线） | ✅ 完成 |
+| 3. 算法开发 | 建模 + 求解 + 五层测试（L1~L5）+ 算法迭代 | `315563d` ~ `2b8f6f6` | `solver-core/`（model/cp_sat/heuristics/router/evaluation/visualize）+ `tests/unit/test_scheduler.py`（17/17 通过）+ `scripts/`（run_tests/run_scheduler/run_l5/run_iteration）+ `docs/algorithm_design.md` + `docs/test_reports/`（L1~L4）+ `docs/test-reports/`（L5 massive） | ✅ 完成 |
+| 4. SaaS 工程化（M0~M4） | monorepo 骨架 + 认证/多租户 + 异步求解 + 初版前端 + 生产化（限流/TLS/监控/K8s） | `07a0045` ~ `f332424` | `backend/`（auth/datasets/tasks/solutions）+ `worker/` + `frontend/`（初版）+ `deploy/`（docker-compose + k8s 清单） | ✅ 完成 |
+| 5. 前端交互 + Dashboard v2 | P0 交互优化 + 任务结果 Dashboard v2（状态机/SSE 事件/求解日志/优化分析） | `23ffd5b` ~ `d9d950b` | `frontend/`（Dashboard.tsx/Gantt/LogPanel/AnalysisPanel/ParamsPanel）+ `docs/user-guide.md` + `docs/Dashboard_v2_过程报告.html` | ✅ 完成 |
+| 6. 交付物整理与评审 | 交付物清单补齐（11 项）+ 文档评审索引 + V3.3 自举闭环回写 + README 维护 | `8488840` ~ `3314984` | `docs/PRD.md` + `docs/技术方案.md` + `docs/personality/运筹优化工程师-V3.3-最终版.md` + README §交付物清单 / §对话分工 | ✅ 完成 |
 
 ---
 
