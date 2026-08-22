@@ -5,13 +5,14 @@
 
 ---
 
-## 三对话分工（总控视角）
+## 对话分工（实际执行 · 与 commit 历史一一对应）
 
-| 对话 | 职责 | 状态 | 产出 |
-|---|---|---|---|
-| 1. 人格自举 + skill | OR-Expert 人格常驻 + 深度流程 | ✅ 完成 | `.hermes.md` + `personality-deploy/OR-Expert/` |
-| 2. 算法开发 | 建模 + 求解 + 四层测试 | ✅ 完成 | `solver-core/`（原 `scripts/scheduler`，算法零改动包化） |
-| 3. SaaS 总控（本对话） | 工程化 + API + 多租户 + 前端 | ✅ 完成 | `backend/` `worker/` `frontend/` `deploy/` |
+| 对话 | 职责 | 对应提交 | 产出 | 状态 |
+|---|---|---|---|---|
+| 1. 人格自举 + skill | OR-Expert 人格常驻 + 自举迭代（V2.1→V3.3，5 轮闭环） | 贯穿全程；V3.3 正式回写于交付整理轮（`8488840`） | `.hermes.md` + `personality-deploy/OR-Expert/`（SKILL.md v1.4.0 + references/v3-full.md V3.3）+ `docs/bootstrap-log.md`（5 轮自举日志）+ `docs/anti-hallucination-checklist.md` + `skills/`（开发/变更/调试三条流水线） | ✅ 完成 |
+| 2. 算法开发 | 建模 + 求解 + 五层测试（L1~L5）+ 算法迭代 | `315563d` ~ `2b8f6f6` | `solver-core/`（model/cp_sat/heuristics/router/evaluation/visualize）+ `tests/unit/test_scheduler.py`（17/17 通过）+ `scripts/`（run_tests/run_scheduler/run_l5/run_iteration）+ `docs/algorithm_design.md` + `docs/test_reports/`（L1~L4）+ `docs/test-reports/`（L5 massive） | ✅ 完成 |
+| 3. SaaS 工程化 | 工程化 + API + 多租户 + 异步求解 + 前端 + Dashboard 迭代 | `07a0045` ~ `d9d950b` | `backend/`（auth/datasets/tasks/solutions + 限流/TLS/监控）+ `worker/` + `frontend/`（Dashboard v2：状态机/SSE/甘特图/日志/分析面板）+ `deploy/`（compose + k8s）+ `docs/user-guide.md` + `docs/Dashboard_v2_过程报告.html` | ✅ 完成 |
+| 4. 交付物整理与评审 | 交付物清单补齐（11 项）+ 文档评审索引 + V3.3 自举闭环回写 | `8488840` | `docs/PRD.md` + `docs/技术方案.md` + `docs/personality/运筹优化工程师-V3.3-最终版.md` + README §交付物清单 | ✅ 完成 |
 
 ---
 
