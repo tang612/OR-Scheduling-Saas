@@ -12,7 +12,27 @@
 |---|---|---|---|
 | 1. 人格自举 + skill | OR-Expert 人格常驻 + 深度流程 | ✅ 完成 | `.hermes.md` + `personality-deploy/OR-Expert/` |
 | 2. 算法开发 | 建模 + 求解 + 四层测试 | ✅ 完成 | `solver-core/`（原 `scripts/scheduler`，算法零改动包化） |
-| 3. SaaS 总控（本对话） | 工程化 + API + 多租户 + 前端 | 🔄 进行中 | `backend/` `worker/` `frontend/` `deploy/` |
+| 3. SaaS 总控（本对话） | 工程化 + API + 多租户 + 前端 | ✅ 完成 | `backend/` `worker/` `frontend/` `deploy/` |
+
+---
+
+## 交付物清单（评审索引 · 11 项）
+
+| # | 交付物 | 位置 |
+|---|---|---|
+| ① | Personality 最终版文档（V3.3） | `docs/personality/运筹优化工程师-V3.3-最终版.md`（V3.0 基线：根目录同名 `.md/.docx`）+ `personality-deploy/OR-Expert/`（SKILL.md + references/v3-full.md） |
+| ② | 自举迭代日志（5 轮） | `docs/bootstrap-log.md`（V2.1→V3.3 自举闭环） |
+| ③ | 三条流水线 Skill 文件 | `skills/app-dev-flow`（开发流水线）`skills/change-request`（变更流水线）`skills/debug`（调试流水线） |
+| ④ | PRD / 技术方案文档 | `docs/PRD.md` + `docs/技术方案.md`（算法需求规格：`docs/多机台智能排产_需求规格_阶段一.html`） |
+| ⑤ | 反幻觉核对清单 | `docs/anti-hallucination-checklist.md` |
+| ⑥ | Git commit 历史完整 | `git log`：Initial commit → M0/M1-M4 → L1~L5 测试 → Dashboard v1/v2，全程可追溯 |
+| ⑦ | 算法核心代码（含单元测试） | `solver-core/`（model/cp_sat/heuristics/router/evaluation/visualize）+ `tests/unit/test_scheduler.py`（17/17 通过）+ `scripts/run_tests.py` |
+| ⑧ | 四层测试报告（含性能数据） | `docs/test_reports/test_L1~L4.md` + `docs/test-reports/test_L5.md`（含耗时/gap/改进幅度） |
+| ⑨ | FastAPI + MongoDB 后端 | `backend/`（auth/datasets/tasks/solutions + core 安全/限流/指标） |
+| ⑩ | 前端界面（可视化排程结果） | `frontend/`（Dashboard/甘特图/日志/分析面板/SSE 实时进度） |
+| ⑪ | 部署说明与运行脚本 | 本 README §快速开始 + `deploy/`（docker-compose / Dockerfile / nginx / k8s / .env.example）+ `scripts/`（run_tests / run_scheduler / run_l5 / run_iteration） |
+
+**文档导航**：`docs/PRD.md`（产品需求）｜`docs/技术方案.md`（系统技术）｜`docs/algorithm_design.md`（算法方案）｜`docs/多机台智能排产_需求规格_阶段一.html`（需求规格+数学模型）｜`docs/solver-findings.md`（CP-SAT API 实证）｜`docs/user-guide.md`（用户指南）｜`docs/visualization_design.md` / `docs/solution-quality-evaluation-design.md`（可视化/质量评估设计）｜`docs/*_过程报告.html`（阶段过程报告）
 
 ---
 

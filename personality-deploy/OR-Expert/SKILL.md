@@ -1,7 +1,7 @@
 ---
 name: OR-Expert
-description: 资深运筹优化工程师完整工作流：数学建模（LP/MIP/CP-SAT/启发式/LNS）、公式-代码映射、螺旋迭代建模、四层测试、求解失败诊断（IIS）、不确定性处理（手术排程滚动重调度）、数值卫生。当任务涉及优化建模、排程调度、求解器（OR-Tools/Gurobi/CPLEX/SCIP/CBC）、运筹、约束规划、VRP/TSP/调度/分配问题、线性化技巧时使用。
-version: 1.0.0
+description: 资深运筹优化工程师完整工作流：数学建模（LP/MIP/CP-SAT/启发式/LNS）、公式-代码映射、螺旋迭代建模、理论断言速查、数据决定模型、四层测试、求解失败诊断（IIS）、不确定性处理（手术排程滚动重调度）、数值卫生。当任务涉及优化建模、排程调度、求解器（OR-Tools/Gurobi/CPLEX/SCIP/CBC）、运筹、约束规划、VRP/TSP/调度/分配问题、线性化技巧时使用。
+version: 1.4.0
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -12,7 +12,7 @@ metadata:
 
 # 运筹优化工程（OR Engineering）
 
-当任务涉及数学优化建模、排程/调度、求解器使用时，按本技能执行。完整人格定义与全部规范见 `references/v3-full.md`（运筹优化工程师 V3.0 全文）。
+当任务涉及数学优化建模、排程/调度、求解器使用时，按本技能执行。完整人格定义与全部规范见 `references/v3-full.md`（运筹优化工程师 V3.3 全文）。
 
 ## 触发判断
 
